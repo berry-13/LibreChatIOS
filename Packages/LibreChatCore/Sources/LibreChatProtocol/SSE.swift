@@ -123,6 +123,17 @@ public actor URLSessionEventStreamTransport: EventStreamTransport {
                             retryAfter: Self.retryAfter(response)
                         )
                     }
+                    // An expired session can be redirected to the browser
+                    // login page, which URLSession follows to a final 200.
+                    // Surfacing HTML as an unauthorized failure lets the
+                    // reconciliation refresh or expire the session instead
+                    // of reconnecting to a page that will never stream.
+                    let finalURL = response.url ?? request.url
+                    let contentType = response.value(forHTTPHeaderField: "Content-Type")?.lowercased()
+                    if Self.isBrowserLoginRedirect(finalURL)
+                        || contentType?.contains("text/html") == true {
+                        throw LibreChatProtocolError.unauthorized
+                    }
                     observability.record(.eventStreamOpened(
                         route: ProtocolRoute.classify(path: request.url?.path ?? ""),
                         status: response.statusCode
@@ -147,5 +158,12 @@ public actor URLSessionEventStreamTransport: EventStreamTransport {
 
     private static func retryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
         response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+    }
+
+    /// Mirrors `AuthSession.isBrowserLoginRedirect`: LibreChat's sign-in page
+    /// is served outside the API namespace.
+    private static func isBrowserLoginRedirect(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return url.lastPathComponent == "login" && !url.path.contains("/api/auth/")
     }
 }

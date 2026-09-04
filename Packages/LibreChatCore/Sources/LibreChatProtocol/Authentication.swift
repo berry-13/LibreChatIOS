@@ -24,6 +24,9 @@ public actor AuthSession {
     private var currentUser: UserAccount?
     private var credentialRevision: UInt64 = 0
     private var refreshTask: Task<AuthenticatedSession, Error>?
+    /// Credential revision captured when the current refresh task started;
+    /// a mismatch at adoption time means a clear raced the refresh.
+    private var refreshTaskRevision: UInt64?
 
     public init(
         transport: HTTPTransport,
@@ -212,6 +215,7 @@ public actor AuthSession {
             }
         }
         let transport = self.transport
+        let startedRevision = credentialRevision
         let task = Task<AuthenticatedSession, Error> {
             let request = try await transport.request(method: .post, path: "api/auth/refresh")
             let response = try await transport.execute(request)
@@ -219,6 +223,7 @@ public actor AuthSession {
             return try Self.refreshSession(from: response.data)
         }
         refreshTask = task
+        refreshTaskRevision = startedRevision
         defer { refreshTask = nil }
         do {
             let session = try await task.value
@@ -232,6 +237,10 @@ public actor AuthSession {
     }
 
     private func adoptRefreshedSession(_ session: AuthenticatedSession) {
+        // A clear that raced the in-flight refresh wins: the credential
+        // revision moved since this refresh started, so its bearer must not
+        // be reinstalled or persisted over the removed credentials.
+        guard refreshTaskRevision == credentialRevision else { return }
         guard accessToken != session.accessToken || currentUser != session.user else { return }
         setAuthenticated(session, reason: .refreshed)
     }
@@ -292,6 +301,10 @@ public actor AuthSession {
     }
 
     public func clearAuthentication(clearCookies: Bool = false) async throws {
+        // Cancel any in-flight refresh first so its completion cannot race
+        // the persistence drain below; adoption stays fenced against the
+        // cleared session in adoptRefreshedSession regardless.
+        refreshTask?.cancel()
         accessToken = nil
         currentUser = nil
         credentialRevision &+= 1
@@ -304,7 +317,6 @@ public actor AuthSession {
             reason: .cleared,
             revision: credentialRevision
         ))
-        refreshTask?.cancel()
         refreshTask = nil
         if clearCookies { try await transport.clearCookies() }
     }
