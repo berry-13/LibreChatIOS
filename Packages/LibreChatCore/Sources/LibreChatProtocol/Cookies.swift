@@ -116,11 +116,12 @@ public struct StoredCookie: Codable, Equatable, Sendable {
     }
 }
 
-/// Keychain-first secret store with an encrypted-at-rest file mirror inside
-/// the app container. The mirror restores sessions when the Keychain loses
-/// data — notably on Simulator development installs, where replacing the app
-/// bundle can drop Keychain items even though the data container persists.
-/// Reads heal the Keychain from the mirror after such a wipe.
+/// Keychain-first secret store. DEBUG builds additionally maintain a file
+/// mirror inside the app container so sessions survive environments where
+/// the Keychain is unavailable or wiped — unsigned development builds and
+/// Simulator reinstalls. Release builds keep credentials Keychain-only, and
+/// every mirror file is excluded from device backups so stored session
+/// credentials can never ride a backup off the device.
 public actor MirroredSecretStore: SecretStore {
     private let primary: any SecretStore
     private let directory: URL
@@ -152,37 +153,47 @@ public actor MirroredSecretStore: SecretStore {
         if let primaryData {
             return primaryData
         }
+        #if DEBUG
         let url = fileURL(for: key)
         guard let mirrored = try? Data(contentsOf: url) else { return nil }
         try? await primary.set(mirrored, for: key)
         return mirrored
+        #else
+        return nil
+        #endif
     }
 
     public func set(_ data: Data, for key: String) async throws {
-        // The mirror is the durability guarantee, not a bonus: unsigned or
-        // entitlement-less builds cannot use the Keychain at all, and
-        // Simulator reinstalls can drop it. A primary failure must therefore
-        // never abort the mirror write — and must never be silent.
         do {
             try await primary.set(data, for: key)
         } catch {
+            #if DEBUG
+            // The mirror is the durability guarantee in development: unsigned
+            // or entitlement-less builds cannot use the Keychain at all, and
+            // Simulator reinstalls can drop it. A primary failure must
+            // therefore never abort the mirror write — and must never be
+            // silent.
             cookiesLog.error(
                 "Session keychain write failed; continuing with file mirror: \(String(describing: error), privacy: .public)"
             )
+            #else
+            // Production keeps credentials Keychain-only: a failing Keychain
+            // write must surface instead of leaking session bytes to disk.
+            throw error
+            #endif
         }
+        #if DEBUG
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try data.write(
-                to: fileURL(for: key),
-                options: [.atomic, .completeFileProtection]
-            )
+            try writeMirror(data, for: key)
         } catch {
             cookiesLog.error("Session mirror write failed: \(String(describing: error), privacy: .public)")
             throw error
         }
+        #endif
     }
 
     public func remove(_ key: String) async throws {
+        #if DEBUG
         // Logout must always delete the mirror: if the primary removal throws
         // (entitlement-less builds) and we aborted here, the surviving mirror
         // would resurrect the session on the next read.
@@ -194,14 +205,39 @@ public actor MirroredSecretStore: SecretStore {
             )
         }
         try? FileManager.default.removeItem(at: fileURL(for: key))
+        #else
+        try await primary.remove(key)
+        #endif
     }
 
+    #if DEBUG
     /// Opaque on-disk name; the raw key contains profile identifiers.
     private func fileURL(for key: String) -> URL {
         let digest = SHA256.hash(data: Data(key.utf8))
         let name = digest.prefix(16).map { String(format: "%02x", $0) }.joined()
         return directory.appending(path: name)
     }
+
+    private func writeMirror(_ data: Data, for key: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        Self.excludeFromBackups(directory)
+        let url = fileURL(for: key)
+        try data.write(
+            to: url,
+            options: [.atomic, .completeFileProtection]
+        )
+        Self.excludeFromBackups(url)
+    }
+
+    /// Mirrored credentials must never be captured by device backups: file
+    /// protection guards a locked device, not the backup archive.
+    private static func excludeFromBackups(_ url: URL) {
+        var mutableURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? mutableURL.setResourceValues(resourceValues)
+    }
+    #endif
 }
 
 public actor ProfileCookieJar {
