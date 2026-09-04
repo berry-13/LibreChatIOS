@@ -748,17 +748,18 @@ private struct PromptEditorForm: View {
     }
 }
 
-/// Shared, in-memory cached loader for the server's prompt category
-/// directory. One fetch serves every editor surface (prompts, agent builder)
-/// for the stale interval; a failed fetch stays empty and retries on the
-/// next open — mirroring the web client's stale-while-idle category query.
+/// In-memory cached loader for the server's prompt category directory.
+/// A failed fetch stays empty and retries on the next open — mirroring the
+/// web client's stale-while-idle category query. The cache is deliberately
+/// instance-local: every editor sheet owns one model, so cached categories
+/// can never outlive the sheet and leak across accounts or server profiles.
 @MainActor
 @Observable
 final class CategoryDirectoryModel {
     static let staleInterval: TimeInterval = 15 * 60
-    private static var cachedCategories: [String] = []
-    private static var fetchedAt: Date = .distantPast
-    private static var inFlight: Task<Void, Never>?
+    private var cachedCategories: [String] = []
+    private var fetchedAt: Date = .distantPast
+    private var inFlight: Task<Void, Never>?
 
     private(set) var categories: [String] = []
 
@@ -769,26 +770,27 @@ final class CategoryDirectoryModel {
     func loadIfNeeded(
         fetch: @escaping @MainActor () async throws -> [String]
     ) async {
-        let cacheIsFresh = Date().timeIntervalSince(Self.fetchedAt) < Self.staleInterval
-        if cacheIsFresh, !Self.cachedCategories.isEmpty {
-            install(Self.cachedCategories)
+        let cacheIsFresh = Date().timeIntervalSince(fetchedAt) < Self.staleInterval
+        if cacheIsFresh, !cachedCategories.isEmpty {
+            install(cachedCategories)
             return
         }
-        if Self.inFlight == nil {
-            Self.inFlight = Task { [weak self] in
+        if inFlight == nil {
+            inFlight = Task { [weak self] in
+                guard let self else { return }
                 do {
                     let fetched = try await fetch()
-                    Self.cachedCategories = fetched
-                    Self.fetchedAt = Date()
-                    self?.install(fetched)
+                    self.cachedCategories = fetched
+                    self.fetchedAt = Date()
+                    self.install(fetched)
                 } catch {
                     // The editor falls back to free entry; a later open retries.
-                    self?.install(Self.cachedCategories)
+                    self.install(self.cachedCategories)
                 }
-                Self.inFlight = nil
+                self.inFlight = nil
             }
         }
-        await Self.inFlight?.value
+        await inFlight?.value
     }
 
     func addCustom(_ name: String) {
@@ -797,10 +799,10 @@ final class CategoryDirectoryModel {
         if !localAdditions.contains(trimmed) {
             localAdditions.append(trimmed)
         }
-        if !Self.cachedCategories.contains(trimmed) {
-            Self.cachedCategories.append(trimmed)
+        if !cachedCategories.contains(trimmed) {
+            cachedCategories.append(trimmed)
         }
-        install(Self.cachedCategories)
+        install(cachedCategories)
     }
 
     private func install(_ values: [String]) {
