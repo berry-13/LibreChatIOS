@@ -1,0 +1,1222 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10001000000000000000001 /* LibreChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000001 /* LibreChatApp.swift */; };
+		A10001000000000000000002 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000002 /* AppRootView.swift */; };
+		A10001000000000000000003 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000003 /* AppModel.swift */; };
+		A10001000000000000000005 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000005 /* APIError.swift */; };
+		A10001000000000000000008 /* ServerAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000008 /* ServerAddress.swift */; };
+		A10001000000000000000009 /* AdaptiveGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000009 /* AdaptiveGlass.swift */; };
+		A10001000000000000000099 /* InitialsAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000099 /* InitialsAvatar.swift */; };
+		A1000100000000000000007A /* Skeleton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000007A /* Skeleton.swift */; };
+		A1000100000000000000000A /* AppBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000000A /* AppBackground.swift */; };
+		A1000100000000000000000B /* ServerSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000000B /* ServerSetupView.swift */; };
+		A1000100000000000000000C /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000000C /* LoginView.swift */; };
+		A1000100000000000000000D /* ConversationListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000000D /* ConversationListView.swift */; };
+		A1000100000000000000000E /* ConversationListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000000E /* ConversationListModel.swift */; };
+		A1000100000000000000000F /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000000F /* ChatView.swift */; };
+		A10001000000000000000010 /* ChatModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000010 /* ChatModel.swift */; };
+		A10001000000000000000011 /* MessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000011 /* MessageRow.swift */; };
+		A10001000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000012 /* Assets.xcassets */; };
+		A1000100000000000000007B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000007B /* PrivacyInfo.xcprivacy */; };
+		A10001000000000000000013 /* ServerAddressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000014 /* ServerAddressTests.swift */; };
+		A10001000000000000000014 /* SSEDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000015 /* SSEDecoderTests.swift */; };
+		A10001000000000000000015 /* SignedInRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000018 /* SignedInRootView.swift */; };
+		A10001000000000000000016 /* LibreChatDomain in Frameworks */ = {isa = PBXBuildFile; productRef = F10001000000000000000001 /* LibreChatDomain */; };
+		A10001000000000000000017 /* LibreChatProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = F10001000000000000000002 /* LibreChatProtocol */; };
+		A10001000000000000000018 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000019 /* AppDependencies.swift */; };
+		A10001000000000000000019 /* CacheStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000001A /* CacheStore.swift */; };
+		A1000100000000000000001A /* LibreChatRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000001B /* LibreChatRepository.swift */; };
+		A1000100000000000000001B /* MobileAuthenticationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000001C /* MobileAuthenticationCoordinator.swift */; };
+		A1000100000000000000001C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000001D /* SettingsView.swift */; };
+		A1000100000000000000001D /* AppLockCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000001E /* AppLockCoordinator.swift */; };
+		A1000100000000000000001E /* UploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000001F /* UploadManager.swift */; };
+		A1000100000000000000001F /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = F10001000000000000000003 /* DesignKit */; };
+		A10001000000000000000020 /* ArchitectureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000020 /* ArchitectureTests.swift */; };
+		A10001000000000000000021 /* LibreChatDomain in Frameworks */ = {isa = PBXBuildFile; productRef = F10001000000000000000001 /* LibreChatDomain */; };
+		A10001000000000000000022 /* LibreChatProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = F10001000000000000000002 /* LibreChatProtocol */; };
+		A10001000000000000000023 /* SearchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000023 /* SearchModel.swift */; };
+		A10001000000000000000024 /* ProjectListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000024 /* ProjectListModel.swift */; };
+		A10001000000000000000025 /* ProjectDetailModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000025 /* ProjectDetailModel.swift */; };
+		A10001000000000000000026 /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000026 /* ProjectsView.swift */; };
+		A10001000000000000000027 /* SharedLinkOwnerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000027 /* SharedLinkOwnerModel.swift */; };
+		A10001000000000000000028 /* SharedLinkOwnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000028 /* SharedLinkOwnerView.swift */; };
+		A10001000000000000000029 /* SharedSnapshotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000029 /* SharedSnapshotView.swift */; };
+		A1000100000000000000002A /* ConversationManagementRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000002A /* ConversationManagementRepositoryTests.swift */; };
+		A1000100000000000000002B /* AppModelSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000021 /* AppModelSelectionTests.swift */; };
+		A1000100000000000000002C /* BookmarksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000002C /* BookmarksView.swift */; };
+		A1000100000000000000002D /* CitationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000002D /* CitationViews.swift */; };
+		A1000100000000000000002E /* CitationPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000002E /* CitationPresentationTests.swift */; };
+		A1000100000000000000002F /* ArtifactViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000002F /* ArtifactViews.swift */; };
+		A10001000000000000000030 /* ArtifactPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000030 /* ArtifactPresentationTests.swift */; };
+		A10001000000000000000031 /* GeneratedFileViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000031 /* GeneratedFileViews.swift */; };
+		A10001000000000000000032 /* GeneratedFileTransferManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000032 /* GeneratedFileTransferManager.swift */; };
+		A10001000000000000000033 /* GeneratedFilePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000033 /* GeneratedFilePresentationTests.swift */; };
+		A10001000000000000000034 /* ChatScrollFollowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000034 /* ChatScrollFollowTests.swift */; };
+		A10001000000000000000035 /* UITestFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000035 /* UITestFixture.swift */; };
+		A10001000000000000000036 /* ConversationNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000036 /* ConversationNavigationUITests.swift */; };
+		A1000100000000000000007C /* LiveServerE2EUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000007C /* LiveServerE2EUITests.swift */; };
+		A1000100000000000000007D /* ChatGPTComposerProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000007D /* ChatGPTComposerProbe.swift */; };
+		A1000100000000000000007E /* ComposerMenuProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000007E /* ComposerMenuProbe.swift */; };
+		A1000100000000000000007F /* StressConversationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000007F /* StressConversationProbe.swift */; };
+		A10001000000000000000038 /* ChatModelHydrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000038 /* ChatModelHydrationTests.swift */; };
+		A10001000000000000000039 /* RecentChatTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000039 /* RecentChatTargetTests.swift */; };
+		A1000100000000000000003A /* MessageEditViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000003A /* MessageEditViews.swift */; };
+		A1000100000000000000003B /* MessageEditingPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000003B /* MessageEditingPresentationTests.swift */; };
+		A1000100000000000000003C /* SteeringViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000003C /* SteeringViews.swift */; };
+		A1000100000000000000003D /* SteeringPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000003D /* SteeringPresentationTests.swift */; };
+		A1000100000000000000003E /* SteeringRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000003E /* SteeringRepositoryTests.swift */; };
+		A1000100000000000000003F /* ConversationForkViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000003F /* ConversationForkViews.swift */; };
+		A10001000000000000000040 /* ConversationForkPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000040 /* ConversationForkPresentationTests.swift */; };
+		A10001000000000000000041 /* FollowUpQueuePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000041 /* FollowUpQueuePersistenceTests.swift */; };
+		A10001000000000000000042 /* FollowUpQueueDrainCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000042 /* FollowUpQueueDrainCoordinator.swift */; };
+		A10001000000000000000043 /* FollowUpQueueDrainCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000043 /* FollowUpQueueDrainCoordinatorTests.swift */; };
+		A10001000000000000000044 /* AgentDirectoryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000044 /* AgentDirectoryModel.swift */; };
+		A10001000000000000000045 /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000045 /* AgentsView.swift */; };
+		A10001000000000000000046 /* AgentDirectoryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000046 /* AgentDirectoryModelTests.swift */; };
+		A10001000000000000000047 /* MemoryCenterModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000047 /* MemoryCenterModel.swift */; };
+		A10001000000000000000048 /* MemoriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000048 /* MemoriesView.swift */; };
+		A10001000000000000000049 /* MemoryCenterModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000049 /* MemoryCenterModelTests.swift */; };
+		A1000100000000000000004A /* PromptLibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000004A /* PromptLibraryModel.swift */; };
+		A1000100000000000000004B /* PromptLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000004B /* PromptLibraryView.swift */; };
+		A1000100000000000000004C /* PromptLibraryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000004C /* PromptLibraryModelTests.swift */; };
+		A1000100000000000000004D /* MessageFeedbackViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000004D /* MessageFeedbackViews.swift */; };
+		A1000100000000000000004E /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000004E /* CameraCaptureView.swift */; };
+		A1000100000000000000004F /* CameraCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000004F /* CameraCaptureTests.swift */; };
+		A10001000000000000000050 /* UploadManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000050 /* UploadManagerTests.swift */; };
+		A10001000000000000000051 /* VoiceCaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000051 /* VoiceCaptureSession.swift */; };
+		A10001000000000000000052 /* VoiceDictationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000052 /* VoiceDictationViews.swift */; };
+		A10001000000000000000053 /* VoiceDictationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000053 /* VoiceDictationTests.swift */; };
+		A10001000000000000000054 /* ResponseAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000054 /* ResponseAudioPlayer.swift */; };
+		A10001000000000000000055 /* ReadAloudViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000055 /* ReadAloudViews.swift */; };
+		A10001000000000000000056 /* ReadAloudTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000056 /* ReadAloudTests.swift */; };
+		A10001000000000000000057 /* GenerationActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000057 /* GenerationActivityViews.swift */; };
+		A10001000000000000000058 /* GenerationActivityPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000058 /* GenerationActivityPresentationTests.swift */; };
+		A10001000000000000000059 /* DesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = F10001000000000000000003 /* DesignKit */; };
+		A1000100000000000000005A /* MCPConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000005A /* MCPConnectionsView.swift */; };
+		A1000100000000000000005B /* MCPConnectionsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000005B /* MCPConnectionsModelTests.swift */; };
+		A1000100000000000000005C /* FileLibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000005C /* FileLibraryModel.swift */; };
+		A1000100000000000000005D /* FileLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000005D /* FileLibraryView.swift */; };
+		A1000100000000000000005E /* FileLibraryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000005E /* FileLibraryModelTests.swift */; };
+		A1000100000000000000005F /* UserKeysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000100000000000000005F /* UserKeysView.swift */; };
+		A10001000000000000000060 /* UserKeysTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000060 /* UserKeysTests.swift */; };
+		A10001000000000000000061 /* PromptManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000061 /* PromptManagementView.swift */; };
+		A10001000000000000000062 /* SkillsManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000062 /* SkillsManagementView.swift */; };
+		A10001000000000000000063 /* SkillsManagementPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20001000000000000000063 /* SkillsManagementPresentationTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		E70002000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E60000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E50001000000000000000001;
+			remoteInfo = LibreChat;
+		};
+		E70002000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E60000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E50001000000000000000001;
+			remoteInfo = LibreChat;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B20001000000000000000001 /* LibreChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibreChatApp.swift; sourceTree = "<group>"; };
+		B20001000000000000000002 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
+		B20001000000000000000003 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000005 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
+		B20001000000000000000008 /* ServerAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAddress.swift; sourceTree = "<group>"; };
+		B20001000000000000000009 /* AdaptiveGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGlass.swift; sourceTree = "<group>"; };
+		B20001000000000000000099 /* InitialsAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InitialsAvatar.swift; sourceTree = "<group>"; };
+		B2000100000000000000007A /* Skeleton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Skeleton.swift; sourceTree = "<group>"; };
+		B2000100000000000000000A /* AppBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBackground.swift; sourceTree = "<group>"; };
+		B2000100000000000000000B /* ServerSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerSetupView.swift; sourceTree = "<group>"; };
+		B2000100000000000000000C /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		B2000100000000000000000D /* ConversationListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListView.swift; sourceTree = "<group>"; };
+		B2000100000000000000000E /* ConversationListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListModel.swift; sourceTree = "<group>"; };
+		B2000100000000000000000F /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		B20001000000000000000010 /* ChatModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000011 /* MessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageRow.swift; sourceTree = "<group>"; };
+		B20001000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B20001000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B2000100000000000000007B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B20001000000000000000014 /* ServerAddressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerAddressTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000015 /* SSEDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEDecoderTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000016 /* LibreChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LibreChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20001000000000000000017 /* LibreChatTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LibreChatTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20001000000000000000018 /* SignedInRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignedInRootView.swift; sourceTree = "<group>"; };
+		B20001000000000000000019 /* AppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDependencies.swift; sourceTree = "<group>"; };
+		B2000100000000000000001A /* CacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheStore.swift; sourceTree = "<group>"; };
+		B2000100000000000000001B /* LibreChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibreChatRepository.swift; sourceTree = "<group>"; };
+		B2000100000000000000001C /* MobileAuthenticationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAuthenticationCoordinator.swift; sourceTree = "<group>"; };
+		B2000100000000000000001D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B2000100000000000000001E /* AppLockCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockCoordinator.swift; sourceTree = "<group>"; };
+		B2000100000000000000001F /* UploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManager.swift; sourceTree = "<group>"; };
+		B20001000000000000000020 /* ArchitectureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchitectureTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000021 /* AppModelSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelSelectionTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000023 /* SearchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000024 /* ProjectListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectListModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000025 /* ProjectDetailModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDetailModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000026 /* ProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsView.swift; sourceTree = "<group>"; };
+		B20001000000000000000027 /* SharedLinkOwnerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedLinkOwnerModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000028 /* SharedLinkOwnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedLinkOwnerView.swift; sourceTree = "<group>"; };
+		B20001000000000000000029 /* SharedSnapshotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedSnapshotView.swift; sourceTree = "<group>"; };
+		B2000100000000000000002A /* ConversationManagementRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationManagementRepositoryTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000002C /* BookmarksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarksView.swift; sourceTree = "<group>"; };
+		B2000100000000000000002D /* CitationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationViews.swift; sourceTree = "<group>"; };
+		B2000100000000000000002E /* CitationPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationPresentationTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000002F /* ArtifactViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactViews.swift; sourceTree = "<group>"; };
+		B20001000000000000000030 /* ArtifactPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactPresentationTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000031 /* GeneratedFileViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedFileViews.swift; sourceTree = "<group>"; };
+		B20001000000000000000032 /* GeneratedFileTransferManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedFileTransferManager.swift; sourceTree = "<group>"; };
+		B20001000000000000000033 /* GeneratedFilePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedFilePresentationTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000034 /* ChatScrollFollowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollFollowTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000035 /* UITestFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixture.swift; sourceTree = "<group>"; };
+		B20001000000000000000036 /* ConversationNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationNavigationUITests.swift; sourceTree = "<group>"; };
+		B2000100000000000000007C /* LiveServerE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveServerE2EUITests.swift; sourceTree = "<group>"; };
+		B2000100000000000000007D /* ChatGPTComposerProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTComposerProbe.swift; sourceTree = "<group>"; };
+		B2000100000000000000007E /* ComposerMenuProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerMenuProbe.swift; sourceTree = "<group>"; };
+		B2000100000000000000007F /* StressConversationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StressConversationProbe.swift; sourceTree = "<group>"; };
+		B20001000000000000000037 /* LibreChatUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LibreChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20001000000000000000038 /* ChatModelHydrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelHydrationTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000039 /* RecentChatTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentChatTargetTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000003A /* MessageEditViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageEditViews.swift; sourceTree = "<group>"; };
+		B2000100000000000000003B /* MessageEditingPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageEditingPresentationTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000003C /* SteeringViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteeringViews.swift; sourceTree = "<group>"; };
+		B2000100000000000000003D /* SteeringPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteeringPresentationTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000003E /* SteeringRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteeringRepositoryTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000003F /* ConversationForkViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationForkViews.swift; sourceTree = "<group>"; };
+		B20001000000000000000040 /* ConversationForkPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationForkPresentationTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000041 /* FollowUpQueuePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpQueuePersistenceTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000042 /* FollowUpQueueDrainCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpQueueDrainCoordinator.swift; sourceTree = "<group>"; };
+		B20001000000000000000043 /* FollowUpQueueDrainCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpQueueDrainCoordinatorTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000044 /* AgentDirectoryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectoryModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000045 /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
+		B20001000000000000000046 /* AgentDirectoryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectoryModelTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000047 /* MemoryCenterModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCenterModel.swift; sourceTree = "<group>"; };
+		B20001000000000000000048 /* MemoriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoriesView.swift; sourceTree = "<group>"; };
+		B20001000000000000000049 /* MemoryCenterModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCenterModelTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000004A /* PromptLibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptLibraryModel.swift; sourceTree = "<group>"; };
+		B2000100000000000000004B /* PromptLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptLibraryView.swift; sourceTree = "<group>"; };
+		B2000100000000000000004C /* PromptLibraryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptLibraryModelTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000004D /* MessageFeedbackViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFeedbackViews.swift; sourceTree = "<group>"; };
+		B2000100000000000000004E /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+		B2000100000000000000004F /* CameraCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000050 /* UploadManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadManagerTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000051 /* VoiceCaptureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureSession.swift; sourceTree = "<group>"; };
+		B20001000000000000000052 /* VoiceDictationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationViews.swift; sourceTree = "<group>"; };
+		B20001000000000000000053 /* VoiceDictationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000054 /* ResponseAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseAudioPlayer.swift; sourceTree = "<group>"; };
+		B20001000000000000000055 /* ReadAloudViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadAloudViews.swift; sourceTree = "<group>"; };
+		B20001000000000000000056 /* ReadAloudTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadAloudTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000057 /* GenerationActivityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationActivityViews.swift; sourceTree = "<group>"; };
+		B20001000000000000000058 /* GenerationActivityPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationActivityPresentationTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000005A /* MCPConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPConnectionsView.swift; sourceTree = "<group>"; };
+		B2000100000000000000005B /* MCPConnectionsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPConnectionsModelTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000005C /* FileLibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLibraryModel.swift; sourceTree = "<group>"; };
+		B2000100000000000000005D /* FileLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLibraryView.swift; sourceTree = "<group>"; };
+		B2000100000000000000005E /* FileLibraryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLibraryModelTests.swift; sourceTree = "<group>"; };
+		B2000100000000000000005F /* UserKeysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserKeysView.swift; sourceTree = "<group>"; };
+		B20001000000000000000060 /* UserKeysTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserKeysTests.swift; sourceTree = "<group>"; };
+		B20001000000000000000061 /* PromptManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptManagementView.swift; sourceTree = "<group>"; };
+		B20001000000000000000062 /* SkillsManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsManagementView.swift; sourceTree = "<group>"; };
+		B20001000000000000000063 /* SkillsManagementPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsManagementPresentationTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D40002000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000016 /* LibreChatDomain in Frameworks */,
+				A10001000000000000000017 /* LibreChatProtocol in Frameworks */,
+				A1000100000000000000001F /* DesignKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D40002000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000021 /* LibreChatDomain in Frameworks */,
+				A10001000000000000000022 /* LibreChatProtocol in Frameworks */,
+				A10001000000000000000059 /* DesignKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D40002000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C30000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C30001000000000000000001 /* LibreChat */,
+				C3000100000000000000000E /* LibreChatTests */,
+				C3000100000000000000001C /* LibreChatUITests */,
+				C3000100000000000000000F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C30001000000000000000001 /* LibreChat */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000001 /* LibreChatApp.swift */,
+				C30001000000000000000002 /* App */,
+				C30001000000000000000003 /* Core */,
+				C30001000000000000000010 /* Data */,
+				C30001000000000000000013 /* Platform */,
+				C30001000000000000000007 /* DesignSystem */,
+				C30001000000000000000008 /* Features */,
+				C3000100000000000000000D /* Resources */,
+			);
+			path = LibreChat;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000002 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000002 /* AppRootView.swift */,
+				B20001000000000000000003 /* AppModel.swift */,
+				B20001000000000000000019 /* AppDependencies.swift */,
+				B20001000000000000000035 /* UITestFixture.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000003 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				C30001000000000000000004 /* Models */,
+				C30001000000000000000005 /* Networking */,
+				C30001000000000000000006 /* Utilities */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000004 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000005 /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000005 /* APIError.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000006 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000008 /* ServerAddress.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000007 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000009 /* AdaptiveGlass.swift */,
+				B20001000000000000000099 /* InitialsAvatar.swift */,
+				B2000100000000000000007A /* Skeleton.swift */,
+				B2000100000000000000000A /* AppBackground.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000008 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				C30001000000000000000009 /* Setup */,
+				C3000100000000000000000A /* Auth */,
+				C3000100000000000000000B /* Conversations */,
+				C3000100000000000000000C /* Chat */,
+				C30001000000000000000018 /* Search */,
+				C3000100000000000000001D /* Agents */,
+				C30001000000000000000019 /* Projects */,
+				C3000100000000000000001A /* Sharing */,
+				C30001000000000000000020 /* Files */,
+				C30001000000000000000015 /* Settings */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000009 /* Setup */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000000B /* ServerSetupView.swift */,
+			);
+			path = Setup;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000000A /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000000C /* LoginView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000000B /* Conversations */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000018 /* SignedInRootView.swift */,
+				B2000100000000000000000D /* ConversationListView.swift */,
+				B2000100000000000000000E /* ConversationListModel.swift */,
+				B2000100000000000000002C /* BookmarksView.swift */,
+			);
+			path = Conversations;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000000C /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000000F /* ChatView.swift */,
+				B20001000000000000000057 /* GenerationActivityViews.swift */,
+				B20001000000000000000010 /* ChatModel.swift */,
+				B20001000000000000000011 /* MessageRow.swift */,
+				B2000100000000000000003A /* MessageEditViews.swift */,
+				B2000100000000000000003C /* SteeringViews.swift */,
+				B2000100000000000000003F /* ConversationForkViews.swift */,
+				B2000100000000000000004A /* PromptLibraryModel.swift */,
+				B2000100000000000000004B /* PromptLibraryView.swift */,
+				B2000100000000000000004D /* MessageFeedbackViews.swift */,
+				B20001000000000000000052 /* VoiceDictationViews.swift */,
+				B20001000000000000000055 /* ReadAloudViews.swift */,
+				B2000100000000000000002D /* CitationViews.swift */,
+				B2000100000000000000002F /* ArtifactViews.swift */,
+				B20001000000000000000031 /* GeneratedFileViews.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000000D /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000012 /* Assets.xcassets */,
+				B20001000000000000000013 /* Info.plist */,
+				B2000100000000000000007B /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000000E /* LibreChatTests */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000014 /* ServerAddressTests.swift */,
+				B20001000000000000000015 /* SSEDecoderTests.swift */,
+				B20001000000000000000020 /* ArchitectureTests.swift */,
+				B20001000000000000000021 /* AppModelSelectionTests.swift */,
+				B2000100000000000000002A /* ConversationManagementRepositoryTests.swift */,
+				B2000100000000000000002E /* CitationPresentationTests.swift */,
+				B20001000000000000000030 /* ArtifactPresentationTests.swift */,
+				B20001000000000000000033 /* GeneratedFilePresentationTests.swift */,
+				B20001000000000000000034 /* ChatScrollFollowTests.swift */,
+				B20001000000000000000038 /* ChatModelHydrationTests.swift */,
+				B20001000000000000000039 /* RecentChatTargetTests.swift */,
+				B2000100000000000000003B /* MessageEditingPresentationTests.swift */,
+				B2000100000000000000003D /* SteeringPresentationTests.swift */,
+				B2000100000000000000003E /* SteeringRepositoryTests.swift */,
+				B20001000000000000000040 /* ConversationForkPresentationTests.swift */,
+				B20001000000000000000041 /* FollowUpQueuePersistenceTests.swift */,
+				B20001000000000000000043 /* FollowUpQueueDrainCoordinatorTests.swift */,
+				B20001000000000000000046 /* AgentDirectoryModelTests.swift */,
+				B20001000000000000000049 /* MemoryCenterModelTests.swift */,
+				B20001000000000000000053 /* VoiceDictationTests.swift */,
+				B20001000000000000000056 /* ReadAloudTests.swift */,
+				B20001000000000000000058 /* GenerationActivityPresentationTests.swift */,
+				B2000100000000000000004C /* PromptLibraryModelTests.swift */,
+				B2000100000000000000004F /* CameraCaptureTests.swift */,
+				B20001000000000000000050 /* UploadManagerTests.swift */,
+				B2000100000000000000005B /* MCPConnectionsModelTests.swift */,
+				B2000100000000000000005E /* FileLibraryModelTests.swift */,
+				B20001000000000000000060 /* UserKeysTests.swift */,
+				B20001000000000000000063 /* SkillsManagementPresentationTests.swift */,
+			);
+			path = LibreChatTests;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000000F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000016 /* LibreChat.app */,
+				B20001000000000000000017 /* LibreChatTests.xctest */,
+				B20001000000000000000037 /* LibreChatUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000010 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				C30001000000000000000011 /* Persistence */,
+				C30001000000000000000012 /* Repositories */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000011 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000001A /* CacheStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000012 /* Repositories */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000001B /* LibreChatRepository.swift */,
+				B20001000000000000000042 /* FollowUpQueueDrainCoordinator.swift */,
+			);
+			path = Repositories;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000013 /* Platform */ = {
+			isa = PBXGroup;
+			children = (
+				C30001000000000000000014 /* WebAuthentication */,
+				C30001000000000000000016 /* Biometrics */,
+				C3000100000000000000001E /* Camera */,
+				C3000100000000000000001F /* Speech */,
+				C30001000000000000000017 /* Uploads */,
+				C3000100000000000000001B /* Files */,
+			);
+			path = Platform;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000014 /* WebAuthentication */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000001C /* MobileAuthenticationCoordinator.swift */,
+			);
+			path = WebAuthentication;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000015 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000001D /* SettingsView.swift */,
+				B20001000000000000000061 /* PromptManagementView.swift */,
+				B20001000000000000000062 /* SkillsManagementView.swift */,
+				B20001000000000000000047 /* MemoryCenterModel.swift */,
+				B20001000000000000000048 /* MemoriesView.swift */,
+				B2000100000000000000005A /* MCPConnectionsView.swift */,
+				B2000100000000000000005F /* UserKeysView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000016 /* Biometrics */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000001E /* AppLockCoordinator.swift */,
+			);
+			path = Biometrics;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000017 /* Uploads */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000001F /* UploadManager.swift */,
+			);
+			path = Uploads;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000018 /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000023 /* SearchModel.swift */,
+			);
+			path = Search;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000019 /* Projects */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000024 /* ProjectListModel.swift */,
+				B20001000000000000000025 /* ProjectDetailModel.swift */,
+				B20001000000000000000026 /* ProjectsView.swift */,
+			);
+			path = Projects;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000001A /* Sharing */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000027 /* SharedLinkOwnerModel.swift */,
+				B20001000000000000000028 /* SharedLinkOwnerView.swift */,
+				B20001000000000000000029 /* SharedSnapshotView.swift */,
+			);
+			path = Sharing;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000001B /* Files */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000032 /* GeneratedFileTransferManager.swift */,
+			);
+			path = Files;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000001C /* LibreChatUITests */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000036 /* ConversationNavigationUITests.swift */,
+				B2000100000000000000007C /* LiveServerE2EUITests.swift */,
+				B2000100000000000000007D /* ChatGPTComposerProbe.swift */,
+				B2000100000000000000007E /* ComposerMenuProbe.swift */,
+				B2000100000000000000007F /* StressConversationProbe.swift */,
+			);
+			path = LibreChatUITests;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000001D /* Agents */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000044 /* AgentDirectoryModel.swift */,
+				B20001000000000000000045 /* AgentsView.swift */,
+			);
+			path = Agents;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000001E /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000004E /* CameraCaptureView.swift */,
+			);
+			path = Camera;
+			sourceTree = "<group>";
+		};
+		C3000100000000000000001F /* Speech */ = {
+			isa = PBXGroup;
+			children = (
+				B20001000000000000000051 /* VoiceCaptureSession.swift */,
+				B20001000000000000000054 /* ResponseAudioPlayer.swift */,
+			);
+			path = Speech;
+			sourceTree = "<group>";
+		};
+		C30001000000000000000020 /* Files */ = {
+			isa = PBXGroup;
+			children = (
+				B2000100000000000000005C /* FileLibraryModel.swift */,
+				B2000100000000000000005D /* FileLibraryView.swift */,
+			);
+			path = Files;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E50001000000000000000001 /* LibreChat */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F90001000000000000000001 /* Build configuration list for PBXNativeTarget "LibreChat" */;
+			buildPhases = (
+				D40001000000000000000001 /* Sources */,
+				D40002000000000000000001 /* Frameworks */,
+				D40003000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LibreChat;
+			packageProductDependencies = (
+				F10001000000000000000001 /* LibreChatDomain */,
+				F10001000000000000000002 /* LibreChatProtocol */,
+				F10001000000000000000003 /* DesignKit */,
+			);
+			productName = LibreChat;
+			productReference = B20001000000000000000016 /* LibreChat.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E50001000000000000000002 /* LibreChatTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F90001000000000000000002 /* Build configuration list for PBXNativeTarget "LibreChatTests" */;
+			buildPhases = (
+				D40001000000000000000002 /* Sources */,
+				D40002000000000000000002 /* Frameworks */,
+				D40003000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E70001000000000000000001 /* PBXTargetDependency */,
+			);
+			name = LibreChatTests;
+			packageProductDependencies = (
+				F10001000000000000000001 /* LibreChatDomain */,
+				F10001000000000000000002 /* LibreChatProtocol */,
+				F10001000000000000000003 /* DesignKit */,
+			);
+			productName = LibreChatTests;
+			productReference = B20001000000000000000017 /* LibreChatTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		E50001000000000000000003 /* LibreChatUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F90001000000000000000004 /* Build configuration list for PBXNativeTarget "LibreChatUITests" */;
+			buildPhases = (
+				D40001000000000000000003 /* Sources */,
+				D40002000000000000000003 /* Frameworks */,
+				D40003000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E70001000000000000000002 /* PBXTargetDependency */,
+			);
+			name = LibreChatUITests;
+			packageProductDependencies = (
+			);
+			productName = LibreChatUITests;
+			productReference = B20001000000000000000037 /* LibreChatUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E60000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					E50001000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					E50001000000000000000002 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = E50001000000000000000001;
+					};
+					E50001000000000000000003 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = E50001000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = F90001000000000000000003 /* Build configuration list for PBXProject "LibreChatIOS" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C30000000000000000000001;
+			packageReferences = (
+				F20001000000000000000001 /* XCLocalSwiftPackageReference "Packages/LibreChatCore" */,
+			);
+			productRefGroup = C3000100000000000000000F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E50001000000000000000001 /* LibreChat */,
+				E50001000000000000000002 /* LibreChatTests */,
+				E50001000000000000000003 /* LibreChatUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D40003000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000012 /* Assets.xcassets in Resources */,
+				A1000100000000000000007B /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D40003000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D40003000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D40001000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000001 /* LibreChatApp.swift in Sources */,
+				A10001000000000000000002 /* AppRootView.swift in Sources */,
+				A10001000000000000000003 /* AppModel.swift in Sources */,
+				A10001000000000000000005 /* APIError.swift in Sources */,
+				A10001000000000000000008 /* ServerAddress.swift in Sources */,
+				A10001000000000000000009 /* AdaptiveGlass.swift in Sources */,
+				A10001000000000000000099 /* InitialsAvatar.swift in Sources */,
+				A1000100000000000000007A /* Skeleton.swift in Sources */,
+				A1000100000000000000000A /* AppBackground.swift in Sources */,
+				A1000100000000000000000B /* ServerSetupView.swift in Sources */,
+				A1000100000000000000000C /* LoginView.swift in Sources */,
+				A1000100000000000000000D /* ConversationListView.swift in Sources */,
+				A1000100000000000000000E /* ConversationListModel.swift in Sources */,
+				A10001000000000000000015 /* SignedInRootView.swift in Sources */,
+				A1000100000000000000002C /* BookmarksView.swift in Sources */,
+				A1000100000000000000000F /* ChatView.swift in Sources */,
+				A10001000000000000000057 /* GenerationActivityViews.swift in Sources */,
+				A10001000000000000000010 /* ChatModel.swift in Sources */,
+				A10001000000000000000011 /* MessageRow.swift in Sources */,
+				A1000100000000000000003A /* MessageEditViews.swift in Sources */,
+				A1000100000000000000004D /* MessageFeedbackViews.swift in Sources */,
+				A1000100000000000000003C /* SteeringViews.swift in Sources */,
+				A1000100000000000000003F /* ConversationForkViews.swift in Sources */,
+				A1000100000000000000002D /* CitationViews.swift in Sources */,
+				A1000100000000000000002F /* ArtifactViews.swift in Sources */,
+				A10001000000000000000031 /* GeneratedFileViews.swift in Sources */,
+				A10001000000000000000018 /* AppDependencies.swift in Sources */,
+				A10001000000000000000019 /* CacheStore.swift in Sources */,
+				A1000100000000000000001A /* LibreChatRepository.swift in Sources */,
+				A10001000000000000000042 /* FollowUpQueueDrainCoordinator.swift in Sources */,
+				A1000100000000000000001B /* MobileAuthenticationCoordinator.swift in Sources */,
+				A1000100000000000000001C /* SettingsView.swift in Sources */,
+				A10001000000000000000061 /* PromptManagementView.swift in Sources */,
+				A10001000000000000000062 /* SkillsManagementView.swift in Sources */,
+				A10001000000000000000047 /* MemoryCenterModel.swift in Sources */,
+				A10001000000000000000048 /* MemoriesView.swift in Sources */,
+				A1000100000000000000005A /* MCPConnectionsView.swift in Sources */,
+				A1000100000000000000005F /* UserKeysView.swift in Sources */,
+				A1000100000000000000005C /* FileLibraryModel.swift in Sources */,
+				A1000100000000000000005D /* FileLibraryView.swift in Sources */,
+				A1000100000000000000004A /* PromptLibraryModel.swift in Sources */,
+				A1000100000000000000004B /* PromptLibraryView.swift in Sources */,
+				A1000100000000000000001D /* AppLockCoordinator.swift in Sources */,
+				A1000100000000000000004E /* CameraCaptureView.swift in Sources */,
+				A10001000000000000000051 /* VoiceCaptureSession.swift in Sources */,
+				A10001000000000000000052 /* VoiceDictationViews.swift in Sources */,
+				A10001000000000000000054 /* ResponseAudioPlayer.swift in Sources */,
+				A10001000000000000000055 /* ReadAloudViews.swift in Sources */,
+				A1000100000000000000001E /* UploadManager.swift in Sources */,
+				A10001000000000000000032 /* GeneratedFileTransferManager.swift in Sources */,
+				A10001000000000000000023 /* SearchModel.swift in Sources */,
+				A10001000000000000000044 /* AgentDirectoryModel.swift in Sources */,
+				A10001000000000000000045 /* AgentsView.swift in Sources */,
+				A10001000000000000000024 /* ProjectListModel.swift in Sources */,
+				A10001000000000000000025 /* ProjectDetailModel.swift in Sources */,
+				A10001000000000000000026 /* ProjectsView.swift in Sources */,
+				A10001000000000000000027 /* SharedLinkOwnerModel.swift in Sources */,
+				A10001000000000000000028 /* SharedLinkOwnerView.swift in Sources */,
+				A10001000000000000000029 /* SharedSnapshotView.swift in Sources */,
+				A10001000000000000000035 /* UITestFixture.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D40001000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000013 /* ServerAddressTests.swift in Sources */,
+				A10001000000000000000014 /* SSEDecoderTests.swift in Sources */,
+				A10001000000000000000020 /* ArchitectureTests.swift in Sources */,
+				A1000100000000000000002B /* AppModelSelectionTests.swift in Sources */,
+				A1000100000000000000002A /* ConversationManagementRepositoryTests.swift in Sources */,
+				A1000100000000000000002E /* CitationPresentationTests.swift in Sources */,
+				A10001000000000000000030 /* ArtifactPresentationTests.swift in Sources */,
+				A10001000000000000000033 /* GeneratedFilePresentationTests.swift in Sources */,
+				A10001000000000000000034 /* ChatScrollFollowTests.swift in Sources */,
+				A10001000000000000000038 /* ChatModelHydrationTests.swift in Sources */,
+				A10001000000000000000039 /* RecentChatTargetTests.swift in Sources */,
+				A1000100000000000000003B /* MessageEditingPresentationTests.swift in Sources */,
+				A1000100000000000000003D /* SteeringPresentationTests.swift in Sources */,
+				A1000100000000000000003E /* SteeringRepositoryTests.swift in Sources */,
+				A10001000000000000000040 /* ConversationForkPresentationTests.swift in Sources */,
+				A10001000000000000000041 /* FollowUpQueuePersistenceTests.swift in Sources */,
+				A10001000000000000000043 /* FollowUpQueueDrainCoordinatorTests.swift in Sources */,
+				A10001000000000000000046 /* AgentDirectoryModelTests.swift in Sources */,
+				A10001000000000000000049 /* MemoryCenterModelTests.swift in Sources */,
+				A1000100000000000000004C /* PromptLibraryModelTests.swift in Sources */,
+				A1000100000000000000004F /* CameraCaptureTests.swift in Sources */,
+				A10001000000000000000050 /* UploadManagerTests.swift in Sources */,
+				A10001000000000000000053 /* VoiceDictationTests.swift in Sources */,
+				A10001000000000000000056 /* ReadAloudTests.swift in Sources */,
+				A10001000000000000000058 /* GenerationActivityPresentationTests.swift in Sources */,
+				A1000100000000000000005B /* MCPConnectionsModelTests.swift in Sources */,
+				A1000100000000000000005E /* FileLibraryModelTests.swift in Sources */,
+				A10001000000000000000060 /* UserKeysTests.swift in Sources */,
+				A10001000000000000000063 /* SkillsManagementPresentationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D40001000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10001000000000000000036 /* ConversationNavigationUITests.swift in Sources */,
+				A1000100000000000000007C /* LiveServerE2EUITests.swift in Sources */,
+				A1000100000000000000007D /* ChatGPTComposerProbe.swift in Sources */,
+				A1000100000000000000007E /* ComposerMenuProbe.swift in Sources */,
+				A1000100000000000000007F /* StressConversationProbe.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E70001000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E50001000000000000000001 /* LibreChat */;
+			targetProxy = E70002000000000000000001 /* PBXContainerItemProxy */;
+		};
+		E70001000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E50001000000000000000001 /* LibreChat */;
+			targetProxy = E70002000000000000000002 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F80001000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F80001000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		F80001000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 2PSCFPTSRR;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LibreChat/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.berry13.LibreChatIOS;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F80001000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 2PSCFPTSRR;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LibreChat/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.berry13.LibreChatIOS;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F80001000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2PSCFPTSRR;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LibreChatIOSTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LibreChat.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LibreChat";
+			};
+			name = Debug;
+		};
+		F80001000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2PSCFPTSRR;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LibreChatIOSTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LibreChat.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LibreChat";
+			};
+			name = Release;
+		};
+		F80001000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2PSCFPTSRR;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LibreChatIOSUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = LibreChat;
+			};
+			name = Debug;
+		};
+		F80001000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2PSCFPTSRR;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LibreChatIOSUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = LibreChat;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F90001000000000000000001 /* Build configuration list for PBXNativeTarget "LibreChat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F80001000000000000000003 /* Debug */,
+				F80001000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F90001000000000000000002 /* Build configuration list for PBXNativeTarget "LibreChatTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F80001000000000000000005 /* Debug */,
+				F80001000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F90001000000000000000003 /* Build configuration list for PBXProject "LibreChatIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F80001000000000000000001 /* Debug */,
+				F80001000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F90001000000000000000004 /* Build configuration list for PBXNativeTarget "LibreChatUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F80001000000000000000007 /* Debug */,
+				F80001000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F20001000000000000000001 /* XCLocalSwiftPackageReference "Packages/LibreChatCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LibreChatCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F10001000000000000000001 /* LibreChatDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20001000000000000000001 /* XCLocalSwiftPackageReference "Packages/LibreChatCore" */;
+			productName = LibreChatDomain;
+		};
+		F10001000000000000000002 /* LibreChatProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20001000000000000000001 /* XCLocalSwiftPackageReference "Packages/LibreChatCore" */;
+			productName = LibreChatProtocol;
+		};
+		F10001000000000000000003 /* DesignKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F20001000000000000000001 /* XCLocalSwiftPackageReference "Packages/LibreChatCore" */;
+			productName = DesignKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E60000000000000000000001 /* Project object */;
+}
