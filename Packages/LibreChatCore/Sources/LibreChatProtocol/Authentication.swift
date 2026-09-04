@@ -115,10 +115,22 @@ public actor AuthSession {
                 "Bearer \(session.accessToken)",
                 forHTTPHeaderField: "Authorization"
             )
-            let response = try await transport.execute(request)
-            guard (200..<300).contains(response.statusCode) else { return nil }
-            setAuthenticated(session, reason: .authenticated)
-            return session
+        let response = try await transport.execute(request)
+        guard (200..<300).contains(response.statusCode) else { return nil }
+        // Adopt the server's current user so role or profile changes made
+        // between launches are not overwritten by the stale persisted copy.
+        // If the payload cannot be mapped, keep the persisted user rather
+        // than failing the whole restore.
+        let user: UserAccount
+        if let dto: LibreChatUserDTO = try? Self.decode(response.data),
+           let currentUser = try? dto.domainModel() {
+            user = currentUser
+        } else {
+            user = session.user
+        }
+        let restored = AuthenticatedSession(accessToken: session.accessToken, user: user)
+        setAuthenticated(restored, reason: .authenticated)
+        return restored
         } catch {
             return nil
         }
@@ -254,7 +266,7 @@ public actor AuthSession {
         currentUser = session.user
         credentialRevision &+= 1
         if let encoded = try? JSONEncoder().encode(session) {
-            Task { try? await secretStore.set(encoded, for: sessionStorageKey) }
+            persistSession(encoded)
         }
         observability.record(.authenticationCredentialRevisionChanged(
             reason: reason,
@@ -262,10 +274,31 @@ public actor AuthSession {
         ))
     }
 
+    /// Session persistence must never overtake a later credential clear:
+    /// a detached write that lands after `clearAuthentication` would write
+    /// the stale session straight back to the store. Chaining each write on
+    /// the previous one keeps writes in auth-event order, and clearing
+    /// awaits the chain before removing the stored session.
+    private var pendingPersistenceWrite: Task<Void, Never>?
+
+    private func persistSession(_ encoded: Data) {
+        let previous = pendingPersistenceWrite
+        let store = secretStore
+        let key = sessionStorageKey
+        pendingPersistenceWrite = Task {
+            await previous?.value
+            try? await store.set(encoded, for: key)
+        }
+    }
+
     public func clearAuthentication(clearCookies: Bool = false) async throws {
         accessToken = nil
         currentUser = nil
         credentialRevision &+= 1
+        if let pending = pendingPersistenceWrite {
+            _ = await pending.value
+            pendingPersistenceWrite = nil
+        }
         try? await secretStore.remove(sessionStorageKey)
         observability.record(.authenticationCredentialRevisionChanged(
             reason: .cleared,

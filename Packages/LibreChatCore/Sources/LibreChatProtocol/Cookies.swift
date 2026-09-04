@@ -137,7 +137,19 @@ public actor MirroredSecretStore: SecretStore {
     }
 
     public func data(for key: String) async throws -> Data? {
-        if let primaryData = try await primary.data(for: key) {
+        let primaryData: Data?
+        do {
+            primaryData = try await primary.data(for: key)
+        } catch {
+            // A throwing primary (missing entitlement, revoked access) must
+            // not hide the mirror — the mirror may be the only copy that
+            // exists in exactly those environments.
+            cookiesLog.error(
+                "Session keychain read failed; falling back to file mirror: \(String(describing: error), privacy: .public)"
+            )
+            primaryData = nil
+        }
+        if let primaryData {
             return primaryData
         }
         let url = fileURL(for: key)
@@ -171,7 +183,16 @@ public actor MirroredSecretStore: SecretStore {
     }
 
     public func remove(_ key: String) async throws {
-        try await primary.remove(key)
+        // Logout must always delete the mirror: if the primary removal throws
+        // (entitlement-less builds) and we aborted here, the surviving mirror
+        // would resurrect the session on the next read.
+        do {
+            try await primary.remove(key)
+        } catch {
+            cookiesLog.error(
+                "Session keychain removal failed; continuing with mirror removal: \(String(describing: error), privacy: .public)"
+            )
+        }
         try? FileManager.default.removeItem(at: fileURL(for: key))
     }
 

@@ -251,8 +251,10 @@ struct InAppOAuthSheet: View {
                         description: Text("The provider page failed to load. Check the connection and try again.")
                     )
                 } else {
+                    let startURL = profile.baseURL.appending(path: "oauth/\(Self.route(for: provider))")
                     OAuthWebView(
-                        startURL: profile.baseURL.appending(path: "oauth/\(Self.route(for: provider))"),
+                        startURL: startURL,
+                        oauthPathPrefix: OAuthWebView.oauthPathPrefix(for: startURL),
                         host: profile.baseURL.host ?? "",
                         onLanding: { cookies in
                             dismiss()
@@ -292,9 +294,25 @@ struct InAppOAuthSheet: View {
 
 private struct OAuthWebView: UIViewRepresentable {
     let startURL: URL
+    /// Path of the OAuth route up to and including `/oauth`, derived from
+    /// `startURL` so deployments served beneath a subpath (`/librechat`)
+    /// are recognized too.
+    let oauthPathPrefix: String
     let host: String
     let onLanding: @MainActor ([StoredCookie]) -> Void
     let onFailure: @MainActor () -> Void
+
+    static func oauthPathPrefix(for startURL: URL) -> String {
+        var prefix = startURL.deletingLastPathComponent().path
+        while prefix.count > 1, prefix.hasSuffix("/") {
+            prefix.removeLast()
+        }
+        return prefix
+    }
+
+    static func isOAuthPath(_ path: String, prefix: String) -> Bool {
+        path == prefix || path.hasPrefix(prefix + "/")
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -329,10 +347,16 @@ private struct OAuthWebView: UIViewRepresentable {
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
             if let url = navigationAction.request.url {
-                if url.path.hasPrefix("/oauth") { sawOAuthHop = true }
+                let isOAuthPath = OAuthWebView.isOAuthPath(url.path, prefix: parent.oauthPathPrefix)
+                if isOAuthPath { sawOAuthHop = true }
+                // Only the top-frame return to the deployment may adopt the
+                // session: subframe navigations and duplicate redirect hops
+                // must never harvest cookies or fire onLanding twice.
                 if sawOAuthHop,
+                   !isOAuthPath,
                    url.host?.lowercased() == parent.host.lowercased(),
-                   !url.path.hasPrefix("/oauth") {
+                   navigationAction.targetFrame?.isMainFrame == true,
+                   !completing {
                     completing = true
                     finish(webView: webView)
                     decisionHandler(.allow)
