@@ -367,6 +367,18 @@ private struct OAuthWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            Task { @MainActor in parent.onFailure() }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            // Initial-load failures (DNS, TLS, offline) report here, before
+            // any navigation commits, so this must drive the failure UI too.
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
             Task { @MainActor in parent.onFailure() }
         }
 

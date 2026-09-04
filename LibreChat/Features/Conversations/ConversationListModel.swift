@@ -61,6 +61,9 @@ final class ConversationListModel {
     private(set) var paginationError: String?
     private(set) var freshness: Date?
     private(set) var isShowingCache = false
+    /// Set once a live server refresh lands during loadIfNeeded; the racing
+    /// cache read must not overwrite it afterwards.
+    private var liveRefreshArrived = false
     private(set) var targetCatalog: TargetCatalogSnapshot?
     private(set) var isLoadingTargets = false
     private(set) var targetError: String?
@@ -228,6 +231,7 @@ final class ConversationListModel {
         guard state == .idle else { return }
         // Cache and network read concurrently: the cached page renders as
         // soon as it lands while the server refresh is already in flight.
+        liveRefreshArrived = false
         async let networkRefresh: Void = reload()
         await loadCache()
         await networkRefresh
@@ -244,6 +248,7 @@ final class ConversationListModel {
         do {
             let page = try await repository.conversations(cursor: nil, limit: 25)
             let refreshedIDs = Set(page.conversations.map(\.id))
+            liveRefreshArrived = true
             conversations = page.conversations + conversations.filter { !refreshedIDs.contains($0.id) }
             nextCursor = page.nextCursor
             freshness = page.fetchedAt
@@ -726,6 +731,10 @@ final class ConversationListModel {
     private func loadCache() async {
         do {
             guard let page = try await repository.cachedConversations(limit: 25) else { return }
+            // A live refresh that completed while this cache read was in
+            // flight wins; writing the stale page over it would leave the
+            // list cache-backed until the next manual reload.
+            guard !liveRefreshArrived else { return }
             conversations = page.conversations
             freshness = page.fetchedAt
             isShowingCache = true

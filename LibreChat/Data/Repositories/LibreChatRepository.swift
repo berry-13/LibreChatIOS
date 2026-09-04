@@ -1532,7 +1532,10 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             let response = try await runtime.restClient.downloadResponse(
                 method: .get,
                 path: path,
-                queryItems: components.percentEncodedQueryItems ?? [],
+                // The transport escapes query items itself; handing over the
+                // percent-encoded form would double-escape signature
+                // parameters and break authenticated image fetches.
+                queryItems: components.queryItems ?? [],
                 authorized: false
             )
             defer { try? FileManager.default.removeItem(at: response.localURL) }

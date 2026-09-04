@@ -58,8 +58,16 @@ actor UploadManager: UploadRepository {
     /// are also drained before returning — after this call, no usage renewal
     /// can still dispatch under this manager's identity.
     func resetAfterCachePurge() async {
-        tasks.values.forEach { $0.cancel() }
+        let outstanding = Array(tasks.values)
         tasks.removeAll()
+        outstanding.forEach { $0.cancel() }
+        // Drain before clearing shared state: performUpload is actor-isolated,
+        // so awaiting here lets each cancelled task finish; without this, a
+        // late completion could recreate a purged upload record pointing at
+        // deleted local data.
+        for task in outstanding {
+            _ = await task.value
+        }
         usageRenewalTask?.cancel()
         immediateUsageRenewalTask?.cancel()
         await usageRenewalTask?.value
