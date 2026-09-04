@@ -1,0 +1,1326 @@
+import Foundation
+import LibreChatDomain
+import LibreChatProtocol
+import Network
+import Observation
+import OSLog
+
+enum GenerationRecoveryTrigger: Equatable, Sendable {
+    case foreground
+    case connectivity
+}
+
+/// A bounded handoff from app lifecycle recovery to the currently visible chat.
+///
+/// The repository has already reconciled these snapshots with the server. A
+/// chat still verifies the profile, account, conversation, and exact handle
+/// before reopening its own snapshot consumer.
+struct GenerationRecoverySignal: Equatable, Sendable {
+    let sequence: UInt64
+    let profileID: ServerProfileID
+    let accountID: AccountID
+    let activeSnapshots: [GenerationSnapshot]
+    let trigger: GenerationRecoveryTrigger
+
+    init(
+        sequence: UInt64,
+        profileID: ServerProfileID,
+        accountID: AccountID,
+        activeSnapshots: [GenerationSnapshot],
+        trigger: GenerationRecoveryTrigger = .foreground
+    ) {
+        self.sequence = sequence
+        self.profileID = profileID
+        self.accountID = accountID
+        self.activeSnapshots = activeSnapshots
+        self.trigger = trigger
+    }
+}
+
+/// Reduces noisy `NWPathMonitor` callbacks to an offline-to-online edge.
+///
+/// The first observation is deliberately ignored: a launch-time reachable
+/// path is not a connectivity return and foreground reconciliation owns that
+/// recovery path.
+struct ConnectivityRecoveryGate: Sendable {
+    private(set) var lastReachable: Bool?
+
+    mutating func receivesPath(reachable: Bool) -> Bool {
+        defer { lastReachable = reachable }
+        return lastReachable == false && reachable
+    }
+}
+
+@MainActor
+@Observable
+final class AppModel {
+    enum Phase: Equatable {
+        case restoring
+        case needsServer
+        case signedOut
+        case signedIn
+    }
+
+    private static let legacyServerKey = "librechat.server-url"
+
+    let dependencies: AppDependencies
+
+    /// True when running against deterministic in-process UI test fixtures.
+    var uiTestFixtureIsActive: Bool {
+        #if DEBUG
+        dependencies.uiTestFixture != nil
+        #else
+        false
+        #endif
+    }
+    private(set) var phase: Phase = .restoring
+    private(set) var profiles: [ServerProfile] = []
+    private(set) var selectedServer: ServerProfile?
+    private(set) var authenticationState: AuthenticationState = .restoring
+    private(set) var compatibility: CompatibilityResult?
+    private(set) var isWorking = false
+    private(set) var isRefreshingServerPolicy = false
+    private(set) var pendingAccountReplacement: AuthenticatedSession?
+    private(set) var pendingTerms: PublicTermsOfService?
+    private(set) var cacheEpoch = UUID()
+    private(set) var generationRecoverySignal: GenerationRecoverySignal?
+    var notice: String?
+
+    private var activeRuntime: ProfileRuntime?
+    private(set) var uploadManager: UploadManager?
+    private var didAttemptRestore = false
+    private var profileSelectionEpoch = 0
+    private let mobileAuthentication = MobileAuthenticationCoordinator()
+    private let appLock = AppLockCoordinator()
+    private(set) var isAppLocked = false
+    private var generationRecoveryTask: Task<Void, Never>?
+    private var generationRecoveryTaskID: UUID?
+    private var generationRecoverySequence: UInt64 = 0
+    private let connectivityMonitor: NWPathMonitor
+    private let connectivityMonitorQueue = DispatchQueue(
+        label: "com.librechat.connectivity-recovery",
+        qos: .utility
+    )
+    private var connectivityRecoveryGate = ConnectivityRecoveryGate()
+    private var isApplicationActive = true
+
+    init(dependencies: AppDependencies) {
+        self.dependencies = dependencies
+        let monitor = NWPathMonitor()
+        connectivityMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            // Keep `NWPath` on the monitor queue. Its reachability bit is the
+            // only information needed by the main-actor recovery coordinator.
+            let reachable = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                self?.receiveConnectivityPath(reachable: reachable)
+            }
+        }
+        monitor.start(queue: connectivityMonitorQueue)
+    }
+
+    deinit {
+        connectivityMonitor.cancel()
+    }
+
+    var user: UserAccount? { authenticationState.user }
+    var cacheHealth: CacheHealth { dependencies.cacheHealth }
+    var cacheRepairNotice: String? { cacheHealth.repairNotice }
+    var repository: LibreChatRepository? { activeRuntime?.repository }
+    var pendingTwoFactorToken: String? {
+        if case let .awaitingTwoFactor(challenge) = authenticationState {
+            return challenge.temporaryToken
+        }
+        return nil
+    }
+    var isOffline: Bool { authenticationState.isReadOnly }
+    var canGenerate: Bool {
+        guard !isOffline else { return false }
+        return compatibility?.capabilities.generation.canGenerate
+            ?? selectedServer?.capabilities?.generation.canGenerate
+            ?? true
+    }
+    var canUseVoiceDictation: Bool {
+        guard !isOffline else { return false }
+        return compatibility?.capabilities.speechCapabilities?.supportsSpeechToText
+            ?? selectedServer?.capabilities?.speechCapabilities?.supportsSpeechToText
+            ?? false
+    }
+    var canUseReadAloud: Bool {
+        guard !isOffline else { return false }
+        return compatibility?.capabilities.speechCapabilities?.supportsTextToSpeech
+            ?? selectedServer?.capabilities?.speechCapabilities?.supportsTextToSpeech
+            ?? false
+    }
+    var compatibilityWarning: String? {
+        compatibility?.warnings.first?.message
+            ?? selectedServer?.capabilities.flatMap { capabilities in
+                if case .unsupported = capabilities.generation {
+                    return "This server can be browsed, but sending requires resumable generation protocol v2."
+                }
+                return nil
+            }
+    }
+    var browserAuthenticationMethods: [AuthenticationMethod] {
+        let methods = compatibility?.capabilities.authenticationMethods
+            ?? selectedServer?.capabilities?.authenticationMethods
+            ?? []
+        return methods.filter { $0 != .email && $0 != .ldap }.sorted { $0.rawValue < $1.rawValue }
+    }
+    var supportsBrowserAuthentication: Bool {
+        compatibility?.capabilities.supportsMobileAuthentication
+            ?? selectedServer?.capabilities?.supportsMobileAuthentication
+            ?? false
+    }
+    var canUseEmailLogin: Bool {
+        if let preLogin = compatibility?.capabilities.preLogin
+            ?? selectedServer?.capabilities?.preLogin {
+            return preLogin.emailLoginEnabled
+        }
+        let methods = compatibility?.capabilities.authenticationMethods
+            ?? selectedServer?.capabilities?.authenticationMethods
+        return methods?.contains(.email) ?? true
+    }
+    var canRequestPasswordReset: Bool {
+        guard let preLogin = compatibility?.capabilities.preLogin
+            ?? selectedServer?.capabilities?.preLogin else { return false }
+        return preLogin.emailLoginEnabled && preLogin.passwordResetEnabled
+    }
+    var canResendEmailVerification: Bool {
+        guard let preLogin = compatibility?.capabilities.preLogin
+            ?? selectedServer?.capabilities?.preLogin else { return false }
+        return preLogin.emailLoginEnabled && preLogin.emailDeliveryEnabled
+    }
+    var canRegisterAccount: Bool {
+        guard let preLogin = compatibility?.capabilities.preLogin
+            ?? selectedServer?.capabilities?.preLogin else { return false }
+        return preLogin.emailLoginEnabled
+            && preLogin.registrationEnabled
+            && !preLogin.requiresWebChallenge
+    }
+    var registrationRequiresBrowserChallenge: Bool {
+        guard let preLogin = compatibility?.capabilities.preLogin
+            ?? selectedServer?.capabilities?.preLogin else { return false }
+        return preLogin.registrationEnabled && preLogin.requiresWebChallenge
+    }
+    var registrationMinimumPasswordLength: Int {
+        compatibility?.capabilities.preLogin?.minimumPasswordLength
+            ?? selectedServer?.capabilities?.preLogin?.minimumPasswordLength
+            ?? 8
+    }
+    var registrationUsesEmailDelivery: Bool {
+        compatibility?.capabilities.preLogin?.emailDeliveryEnabled
+            ?? selectedServer?.capabilities?.preLogin?.emailDeliveryEnabled
+            ?? false
+    }
+    var publicLegalConfiguration: PublicLegalConfiguration? {
+        compatibility?.capabilities.publicLegal
+            ?? selectedServer?.capabilities?.publicLegal
+    }
+    var canShareConversations: Bool {
+        guard !isOffline else { return false }
+        return compatibility?.capabilities.supportsSharedLinks
+            ?? selectedServer?.capabilities?.supportsSharedLinks
+            ?? false
+    }
+    var canSnapshotFilesInSharedLinks: Bool {
+        compatibility?.capabilities.supportsSharedLinkFileSnapshots
+            ?? selectedServer?.capabilities?.supportsSharedLinkFileSnapshots
+            ?? false
+    }
+    var canUseBookmarks: Bool {
+        guard !isOffline else { return false }
+        if let discovered = compatibility?.capabilities.supportsBookmarks {
+            return discovered
+        }
+        return selectedServer?.capabilities?.supportsBookmarks == true
+    }
+    var canDeleteAccount: Bool {
+        guard phase == .signedIn, !isOffline else { return false }
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return capabilities?.authenticatedPolicyVerified == true
+            && capabilities?.supportsAccountDeletion == true
+    }
+    var temporaryChatPolicy: TemporaryChatPolicy? {
+        guard !isOffline else { return nil }
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        guard capabilities?.authenticatedPolicyVerified == true,
+              capabilities?.temporaryChatPolicy?.isAvailable == true else { return nil }
+        return capabilities?.temporaryChatPolicy
+    }
+    var memoryPermissions: MemoryPermissions? {
+        compatibility?.capabilities.memoryPermissions
+            ?? selectedServer?.capabilities?.memoryPermissions
+    }
+    var promptPermissions: PromptPermissions? {
+        compatibility?.capabilities.promptPermissions
+            ?? selectedServer?.capabilities?.promptPermissions
+    }
+    var agentPermissions: AgentPermissions? {
+        compatibility?.capabilities.agentPermissions
+            ?? selectedServer?.capabilities?.agentPermissions
+    }
+    var mcpPermissions: MCPPermissions? {
+        compatibility?.capabilities.mcpPermissions
+            ?? selectedServer?.capabilities?.mcpPermissions
+    }
+    var skillPermissions: SkillPermissions? {
+        compatibility?.capabilities.skillPermissions
+            ?? selectedServer?.capabilities?.skillPermissions
+    }
+    var canUseSkills: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return !isOffline
+            && capabilities?.authenticatedPolicyVerified == true
+            && capabilities?.supportsSkills == true
+            && capabilities?.skillPermissions?.use == true
+    }
+    var canUsePrompts: Bool {
+        !isOffline && promptPermissions?.use == true
+    }
+    var canUsePresets: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return !isOffline
+            && capabilities?.authenticatedPolicyVerified == true
+            && capabilities?.supportsPresets == true
+    }
+    var canBrowseAgents: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return !isOffline
+            && capabilities?.authenticatedPolicyVerified == true
+            && capabilities?.supportsAgents == true
+            && capabilities?.agentPermissions?.use == true
+    }
+    var canCreateAgents: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return !isOffline
+            && capabilities?.authenticatedPolicyVerified == true
+            && capabilities?.supportsAgents == true
+            && capabilities?.agentPermissions?.canManageMetadata == true
+    }
+    var canBrowseMemories: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return capabilities?.supportsMemories == true
+            && capabilities?.memoryPermissions?.canRead == true
+    }
+    var canBrowseMCPConnections: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return !isOffline
+            && capabilities?.supportsMCP == true
+            && capabilities?.mcpPermissions?.use == true
+    }
+    var authenticatedServerPolicyUnavailable: Bool {
+        guard phase == .signedIn else { return false }
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return capabilities?.authenticatedPolicyVerified == false
+    }
+    var isAppLockEnabled: Bool { appLock.isEnabled }
+
+    func restoreIfNeeded() async {
+        guard !didAttemptRestore else { return }
+        didAttemptRestore = true
+        #if DEBUG
+        if let fixture = dependencies.uiTestFixture {
+            await installUITestFixture(fixture)
+            return
+        }
+        #endif
+        do {
+            profiles = try await dependencies.cache.profiles()
+            try await migrateLegacyServerIfNeeded()
+        } catch {
+            AppLog.persistence.error("Profile restoration failed.")
+        }
+
+        guard let profile = profiles.first else {
+            authenticationState = .needsServer
+            phase = .needsServer
+            return
+        }
+        await select(profile: profile, restoring: true)
+    }
+
+    #if DEBUG
+    private func installUITestFixture(_ fixture: UITestFixture) async {
+        let runtime = dependencies.profileRuntime(for: fixture.profile)
+        activeRuntime = runtime
+        selectedServer = fixture.profile
+        profiles = [fixture.profile]
+        await runtime.protocolRuntime.authSession.setAuthenticated(fixture.session)
+        do {
+            try await accept(session: fixture.session, runtime: runtime, replacingAccount: false)
+        } catch {
+            authenticationState = .signedOut(fixture.profile.id)
+            phase = .signedOut
+            notice = "UI test fixtures could not start."
+        }
+    }
+    #endif
+
+    func connect(to input: String) async throws {
+        isWorking = true
+        notice = nil
+        defer { isWorking = false }
+
+        let address = try ServerAddress.parse(input)
+        var profile = ServerProfile(
+            baseURL: address.url,
+            displayName: address.displayName,
+            trustPolicy: address.url.scheme == "http" ? .localDevelopment : .system
+        )
+        let runtime = dependencies.profileRuntime(for: profile)
+        try await runtime.repository.healthCheck()
+        let compatibility = try await runtime.repository.discoverCapabilities()
+        profile.capabilities = compatibility.capabilities
+        try await dependencies.cache.save(profile: profile, selected: true)
+
+        profiles.removeAll { $0.id == profile.id }
+        profiles.insert(profile, at: 0)
+        activeRuntime = runtime
+        selectedServer = profile
+        generationRecoverySignal = nil
+        self.compatibility = compatibility
+        authenticationState = .signedOut(profile.id)
+        phase = .signedOut
+    }
+
+    func select(profile: ServerProfile, restoring: Bool = false) async {
+        profileSelectionEpoch &+= 1
+        let selectionEpoch = profileSelectionEpoch
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        isWorking = true
+        notice = nil
+        authenticationState = .restoring
+        phase = .restoring
+        await uploadManager?.resetAfterCachePurge()
+        uploadManager = nil
+        pendingAccountReplacement = nil
+        pendingTerms = nil
+        defer {
+            if selectionEpoch == profileSelectionEpoch {
+                isWorking = false
+            }
+        }
+
+        if let repository = activeRuntime?.repository {
+            await repository.detachActiveStreams()
+        }
+        guard selectionEpoch == profileSelectionEpoch else { return }
+
+        let runtime = dependencies.profileRuntime(for: profile)
+        activeRuntime = runtime
+        selectedServer = profile
+        try? await dependencies.cache.save(profile: profile, selected: true)
+        guard selectionEpoch == profileSelectionEpoch else { return }
+
+        do {
+            let discovered = try await runtime.repository.discoverCapabilities()
+            guard selectionEpoch == profileSelectionEpoch else { return }
+            compatibility = discovered
+            updateSelectedCapabilities(discovered.capabilities)
+        } catch {
+            guard selectionEpoch == profileSelectionEpoch else { return }
+            compatibility = profile.capabilities.map {
+                CompatibilityResult(supported: true, warnings: [], capabilities: $0)
+            }
+        }
+
+        do {
+            let session = try await runtime.protocolRuntime.authSession.restoreSession()
+            guard selectionEpoch == profileSelectionEpoch else { return }
+            try await accept(
+                session: session,
+                runtime: runtime,
+                replacingAccount: false,
+                selectionEpoch: selectionEpoch
+            )
+        } catch is CancellationError {
+            return
+        } catch let error as LibreChatProtocolError {
+            guard selectionEpoch == profileSelectionEpoch else { return }
+            AppLog.authentication.error(
+                "Session restore failed: \(String(describing: error), privacy: .public)"
+            )
+            switch error {
+            case .transport:
+                if let cached = try? await dependencies.cache.lastVerifiedAccount(
+                    profileID: profile.id,
+                    accountID: profile.accountIdentifier
+                ) {
+                    guard selectionEpoch == profileSelectionEpoch else { return }
+                    let resolvedCached = Self.accountWithResolvedAvatar(
+                        cached,
+                        baseURL: profile.baseURL
+                    )
+                    await runtime.repository.activate(account: resolvedCached)
+                    guard selectionEpoch == profileSelectionEpoch else { return }
+                    authenticationState = .authenticatedOffline(resolvedCached)
+                    phase = .signedIn
+                    notice = "Offline. Showing the last verified cache; remote changes are disabled."
+                } else {
+                    authenticationState = .signedOut(profile.id)
+                    phase = .signedOut
+                    notice = "The server is saved, but it could not be reached."
+                }
+            default:
+                await invalidateSession(
+                    for: profile,
+                    runtime: runtime,
+                    selectionEpoch: selectionEpoch
+                )
+            }
+        } catch {
+            guard selectionEpoch == profileSelectionEpoch else { return }
+            AppLog.authentication.error(
+                "Session restore failed unexpectedly: \(String(describing: error), privacy: .public)"
+            )
+            authenticationState = .signedOut(profile.id)
+            phase = .signedOut
+            notice = "The server is saved, but the previous session could not be restored."
+        }
+    }
+
+    func signIn(email: String, password: String) async throws {
+        guard let activeRuntime else { throw LibreChatProtocolError.unsupported("Choose a server first.") }
+        isWorking = true
+        notice = nil
+        defer { isWorking = false }
+
+        switch try await activeRuntime.protocolRuntime.authSession.login(email: email, password: password) {
+        case let .authenticated(session):
+            try await accept(session: session, runtime: activeRuntime, replacingAccount: false)
+        case let .requiresTwoFactor(challenge):
+            authenticationState = .awaitingTwoFactor(challenge)
+        }
+    }
+
+    func signIn(using method: AuthenticationMethod) async throws {
+        guard supportsBrowserAuthentication,
+              let profile = selectedServer,
+              let runtime = activeRuntime else {
+            throw LibreChatProtocolError.unsupported(
+                "This server does not provide the mobile authorization-code extension."
+            )
+        }
+        let selectionEpoch = profileSelectionEpoch
+        isWorking = true
+        notice = nil
+        defer { isWorking = false }
+        let configuration = try await runtime.repository.mobileAuthenticationConfiguration()
+        try validateBrowserAuthenticationContext(
+            profileID: profile.id,
+            runtime: runtime,
+            selectionEpoch: selectionEpoch
+        )
+        let grant = try await mobileAuthentication.authorize(
+            profile: profile,
+            provider: method,
+            configuration: configuration
+        )
+        try validateBrowserAuthenticationContext(
+            profileID: profile.id,
+            runtime: runtime,
+            selectionEpoch: selectionEpoch
+        )
+        let session = try await runtime.repository.exchangeMobileAuthorization(grant)
+        try validateBrowserAuthenticationContext(
+            profileID: profile.id,
+            runtime: runtime,
+            selectionEpoch: selectionEpoch
+        )
+        try await accept(
+            session: session,
+            runtime: runtime,
+            replacingAccount: false,
+            selectionEpoch: selectionEpoch
+        )
+    }
+
+    /// Adopts a social/OAuth session completed inside the in-app web view:
+    /// the harvested cookies seed the profile jar, and a refresh mints the
+    /// native access token. Works against stock LibreChat servers without
+    /// the mobile authorization-code extension.
+    func adoptSocialSession(cookies: [StoredCookie]) async throws {
+        guard let profile = selectedServer,
+              let runtime = activeRuntime else {
+            throw LibreChatProtocolError.unsupported("Choose a server first.")
+        }
+        guard !cookies.isEmpty else {
+            throw LibreChatProtocolError.unauthorized
+        }
+        let selectionEpoch = profileSelectionEpoch
+        isWorking = true
+        notice = nil
+        defer { isWorking = false }
+        try await runtime.protocolRuntime.cookieJar.replace(with: cookies)
+        try validateBrowserAuthenticationContext(
+            profileID: profile.id,
+            runtime: runtime,
+            selectionEpoch: selectionEpoch
+        )
+        let session = try await runtime.protocolRuntime.authSession.refresh()
+        try validateBrowserAuthenticationContext(
+            profileID: profile.id,
+            runtime: runtime,
+            selectionEpoch: selectionEpoch
+        )
+        try await accept(
+            session: session,
+            runtime: runtime,
+            replacingAccount: false,
+            selectionEpoch: selectionEpoch
+        )
+    }
+
+    private func validateBrowserAuthenticationContext(
+        profileID: ServerProfileID,
+        runtime: ProfileRuntime,
+        selectionEpoch: Int
+    ) throws {
+        guard selectionEpoch == profileSelectionEpoch,
+              selectedServer?.id == profileID,
+              activeRuntime?.profile.id == runtime.profile.id else {
+            throw CancellationError()
+        }
+    }
+
+    func verifyTwoFactor(code: String) async throws {
+        guard let activeRuntime,
+              case let .awaitingTwoFactor(challenge) = authenticationState else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        isWorking = true
+        notice = nil
+        defer { isWorking = false }
+
+        let session = try await activeRuntime.protocolRuntime.authSession.verifyTwoFactor(
+            temporaryToken: challenge.temporaryToken,
+            code: code
+        )
+        try await accept(session: session, runtime: activeRuntime, replacingAccount: false)
+    }
+
+    func requestPasswordReset(email: String) async throws -> PasswordResetRequestResult {
+        guard canRequestPasswordReset, let repository = activeRuntime?.repository else {
+            throw LibreChatProtocolError.unsupported(
+                "Password recovery is not available on this server."
+            )
+        }
+        return try await repository.requestPasswordReset(email: email)
+    }
+
+    func registerAccount(_ registration: AccountRegistration) async throws -> RegistrationResult {
+        guard canRegisterAccount, let repository = activeRuntime?.repository else {
+            throw LibreChatProtocolError.unsupported(
+                registrationRequiresBrowserChallenge
+                    ? "Registration requires this server’s browser challenge."
+                    : "Registration is not available on this server."
+            )
+        }
+        return try await repository.register(registration)
+    }
+
+    func resendEmailVerification(email: String) async throws -> EmailVerificationResendResult {
+        guard canResendEmailVerification, let repository = activeRuntime?.repository else {
+            throw LibreChatProtocolError.unsupported(
+                "Email verification delivery is not available on this server."
+            )
+        }
+        return try await repository.resendEmailVerification(email: email)
+    }
+
+    func acceptPendingTerms() async throws {
+        guard pendingTerms != nil, let repository = activeRuntime?.repository else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        _ = try await repository.acceptTerms()
+        pendingTerms = nil
+    }
+
+    func declinePendingTerms() async {
+        pendingTerms = nil
+        await signOut()
+    }
+
+    func confirmAccountReplacement() async {
+        guard let session = pendingAccountReplacement, let activeRuntime, let selectedServer else { return }
+        isWorking = true
+        defer { isWorking = false }
+        if let oldAccount = selectedServer.accountIdentifier {
+            try? await dependencies.cache.purge(profileID: selectedServer.id, accountID: oldAccount)
+        }
+        do {
+            try await accept(session: session, runtime: activeRuntime, replacingAccount: true)
+        } catch {
+            notice = error.userFacingMessage
+        }
+    }
+
+    func cancelAccountReplacement() async {
+        pendingAccountReplacement = nil
+        generationRecoverySignal = nil
+        await activeRuntime?.protocolRuntime.authSession.logout()
+        if let profileID = selectedServer?.id {
+            authenticationState = .signedOut(profileID)
+        }
+        phase = .signedOut
+    }
+
+    func cancelTwoFactor() {
+        authenticationState = .signedOut(selectedServer?.id)
+    }
+
+    func signOut() async {
+        guard let selectedServer else { return }
+        isWorking = true
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        await activeRuntime?.repository.detachActiveStreams()
+        await activeRuntime?.protocolRuntime.authSession.logout()
+        if let accountID = selectedServer.accountIdentifier {
+            await hideCache(profileID: selectedServer.id, accountID: accountID)
+        }
+        authenticationState = .signedOut(selectedServer.id)
+        await uploadManager?.resetAfterCachePurge()
+        uploadManager = nil
+        pendingAccountReplacement = nil
+        pendingTerms = nil
+        isWorking = false
+        phase = .signedOut
+    }
+
+    func expireSession() async {
+        guard let selectedServer else { return }
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        await activeRuntime?.repository.detachActiveStreams()
+        try? await activeRuntime?.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        if let accountID = selectedServer.accountIdentifier {
+            await hideCache(profileID: selectedServer.id, accountID: accountID)
+        }
+        authenticationState = .signedOut(selectedServer.id)
+        await uploadManager?.resetAfterCachePurge()
+        uploadManager = nil
+        pendingTerms = nil
+        notice = "Your session expired. Sign in to continue."
+        phase = .signedOut
+    }
+
+    func chooseAnotherServer() async {
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        await activeRuntime?.repository.detachActiveStreams()
+        activeRuntime = nil
+        await uploadManager?.resetAfterCachePurge()
+        uploadManager = nil
+        selectedServer = nil
+        authenticationState = .needsServer
+        compatibility = nil
+        pendingAccountReplacement = nil
+        pendingTerms = nil
+        notice = nil
+        phase = .needsServer
+    }
+
+    func removeProfile(_ profile: ServerProfile) async {
+        let runtime = selectedServer?.id == profile.id
+            ? activeRuntime
+            : dependencies.profileRuntime(for: profile)
+        if let runtime {
+            try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        }
+        if selectedServer?.id == profile.id { await chooseAnotherServer() }
+        do {
+            try await dependencies.cache.remove(profileID: profile.id)
+            profiles.removeAll { $0.id == profile.id }
+        } catch {
+            notice = "The server profile could not be removed completely."
+            AppLog.persistence.error("Server profile purge failed.")
+        }
+    }
+
+    func clearCache() async {
+        guard cacheHealth.allowsUserInitiatedClear else {
+            notice = cacheRepairNotice
+            return
+        }
+        guard let selectedServer else { return }
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        await activeRuntime?.repository.detachActiveStreams()
+        do {
+            try await dependencies.cache.purge(
+                profileID: selectedServer.id,
+                accountID: selectedServer.accountIdentifier
+            )
+            await activeRuntime?.repository.resetInMemoryState()
+            await uploadManager?.resetAfterCachePurge()
+            cacheEpoch = UUID()
+            notice = "Saved cache cleared. LibreChat will reload this server's current data."
+            if !isOffline, let repository = activeRuntime?.repository {
+                startGenerationRecovery(
+                    repository: repository,
+                    profileID: selectedServer.id,
+                    accountID: selectedServer.accountIdentifier
+                )
+            }
+        } catch {
+            notice = "The saved cache could not be cleared completely."
+            AppLog.persistence.error("Cache purge failed.")
+        }
+    }
+
+    func applicationBecameInactive() async {
+        isApplicationActive = false
+        AppLog.generation.info("Application became inactive; checkpointing and detaching generation streams.")
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        await activeRuntime?.repository.detachActiveStreams()
+        if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
+    }
+
+    func applicationBecameActive() async {
+        isApplicationActive = true
+        guard phase == .signedIn, !isOffline, let repository = activeRuntime?.repository else { return }
+        await uploadManager?.applicationBecameActive()
+        AppLog.generation.info("Application became active; starting generation reconciliation.")
+        startGenerationRecovery(
+            repository: repository,
+            profileID: selectedServer?.id,
+            accountID: selectedServer?.accountIdentifier,
+            publishToVisibleChat: true
+        )
+    }
+
+    func setAppLockEnabled(_ enabled: Bool) {
+        appLock.isEnabled = enabled
+        if !enabled { isAppLocked = false }
+    }
+
+    func unlockApp() async {
+        do {
+            if try await appLock.unlock() { isAppLocked = false }
+        } catch {
+            notice = "Device authentication was not completed."
+        }
+    }
+
+    func beginTwoFactorSetup() async throws -> TwoFactorSetup {
+        guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
+        return try await activeRuntime.protocolRuntime.authSession.beginTwoFactorSetup()
+    }
+
+    func confirmTwoFactorSetup(code: String) async throws {
+        guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
+        try await activeRuntime.protocolRuntime.authSession.confirmTwoFactorSetup(code: code)
+        await activeRuntime.protocolRuntime.authSession.updateTwoFactorStatus(true)
+        updateTwoFactorStatus(true)
+    }
+
+    func regenerateBackupCodes(proof: TwoFactorProof) async throws -> [String] {
+        guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
+        return try await activeRuntime.protocolRuntime.authSession.regenerateBackupCodes(proof: proof)
+    }
+
+    func disableTwoFactor(proof: TwoFactorProof) async throws {
+        guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
+        try await activeRuntime.protocolRuntime.authSession.disableTwoFactor(proof: proof)
+        await activeRuntime.protocolRuntime.authSession.updateTwoFactorStatus(false)
+        updateTwoFactorStatus(false)
+    }
+
+    func refreshAccountProfile() async throws -> UserAccount {
+        guard phase == .signedIn,
+              !isOffline,
+              let runtime = activeRuntime,
+              let profile = selectedServer else {
+            throw LibreChatProtocolError.unauthorized
+        }
+        let selectionEpoch = profileSelectionEpoch
+        let account = try await runtime.repository.accountProfile()
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        guard profile.id == selectedServer?.id,
+              account.id == selectedServer?.accountIdentifier else {
+            throw AccountProfileError.accountMismatch
+        }
+        let resolvedAccount = Self.accountWithResolvedAvatar(account, baseURL: profile.baseURL)
+        authenticationState = .authenticated(resolvedAccount)
+        try await dependencies.cache.saveAccount(profileID: profile.id, account: resolvedAccount)
+        return resolvedAccount
+    }
+
+    /// LibreChat reports the account avatar as a site-relative path
+    /// (`/images/<file>`). Left unresolved, the URL has no scheme or host:
+    /// plain image requests fail and every surface falls back to initials.
+    /// Resolve it against the active server origin with the same policy used
+    /// for target icons, so the authenticated image pipeline can fetch it.
+    static func accountWithResolvedAvatar(_ account: UserAccount, baseURL: URL) -> UserAccount {
+        var resolved = account
+        guard let raw = account.avatarURL?.absoluteString
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty else { return account }
+        resolved.avatarURL = TargetIconURLPolicy(
+            allowsInsecureLoopback: baseURL.scheme?.lowercased() == "http"
+        ).resolve(raw, relativeTo: baseURL)?.url
+        return resolved
+    }
+
+    /// Fetches raw bytes for a server-hosted entity image through the active
+    /// profile's authenticated transport (see `LibreChatRepository.imageData`).
+    func imageData(at url: URL) async throws -> Data {
+        guard let repository = activeRuntime?.repository else {
+            throw LibreChatProtocolError.unauthorized
+        }
+        return try await repository.imageData(at: url)
+    }
+
+    func uploadAccountAvatar(_ upload: AccountAvatarUpload) async throws -> UserAccount {
+        guard phase == .signedIn,
+              !isOffline,
+              let runtime = activeRuntime,
+              let profile = selectedServer,
+              let account = user else {
+            throw LibreChatProtocolError.unauthorized
+        }
+        let selectionEpoch = profileSelectionEpoch
+        let reconciledAccount = try await runtime.repository.uploadAccountAvatar(
+            upload,
+            previousAvatarURL: account.avatarURL
+        )
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        guard profile.id == selectedServer?.id,
+              reconciledAccount.id == selectedServer?.accountIdentifier else {
+            throw AccountProfileError.accountMismatch
+        }
+        let resolvedAccount = Self.accountWithResolvedAvatar(reconciledAccount, baseURL: profile.baseURL)
+        authenticationState = .authenticated(resolvedAccount)
+        try await dependencies.cache.saveAccount(profileID: profile.id, account: resolvedAccount)
+        return resolvedAccount
+    }
+
+    func deleteCurrentAccount(proof: TwoFactorProof?) async throws {
+        guard canDeleteAccount,
+              let runtime = activeRuntime,
+              var profile = selectedServer,
+              let accountID = profile.accountIdentifier else {
+            throw AccountDeletionError.notPermitted
+        }
+        if user?.twoFactorEnabled == true {
+            guard let proof,
+                  !proof.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw AccountDeletionError.verificationRequired
+            }
+        }
+
+        let selectionEpoch = profileSelectionEpoch
+        try await runtime.repository.deleteAccount(proof: proof)
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+
+        cancelGenerationRecovery()
+        generationRecoverySignal = nil
+        await runtime.repository.detachActiveStreams()
+        try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        do {
+            try await dependencies.cache.purge(profileID: profile.id, accountID: accountID)
+        } catch {
+            await hideCache(profileID: profile.id, accountID: accountID)
+            AppLog.persistence.error("Deleted-account cache purge failed; the namespace was hidden.")
+        }
+        await runtime.repository.resetInMemoryState()
+        await uploadManager?.resetAfterCachePurge()
+        uploadManager = nil
+
+        profile.accountIdentifier = nil
+        if let capabilities = profile.capabilities {
+            profile.capabilities = capabilities.failingClosedAuthenticatedPolicy()
+        }
+        selectedServer = profile
+        compatibility = profile.capabilities.map {
+            CompatibilityResult(supported: true, warnings: [], capabilities: $0)
+        }
+        replaceProfile(profile)
+        try? await dependencies.cache.save(profile: profile, selected: true)
+        authenticationState = .signedOut(profile.id)
+        pendingTerms = nil
+        notice = "Account deleted. Local data for that account was removed from this device."
+        phase = .signedOut
+    }
+
+    private func updateTwoFactorStatus(_ enabled: Bool) {
+        guard var user else { return }
+        user.twoFactorEnabled = enabled
+        authenticationState = .authenticated(user)
+    }
+
+    func recordMemoriesEnabled(_ enabled: Bool) async {
+        guard var user else { return }
+        user.memoriesEnabled = enabled
+        authenticationState = .authenticated(user)
+        guard let selectedServer else { return }
+        try? await dependencies.cache.saveAccount(profileID: selectedServer.id, account: user)
+    }
+
+    private func accept(
+        session: AuthenticatedSession,
+        runtime: ProfileRuntime,
+        replacingAccount: Bool,
+        selectionEpoch: Int? = nil
+    ) async throws {
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        guard var profile = selectedServer else { throw LibreChatProtocolError.invalidResponse }
+        generationRecoverySignal = nil
+        if let existing = profile.accountIdentifier,
+           existing != session.user.id,
+           !replacingAccount {
+            pendingAccountReplacement = session
+            authenticationState = .signedOut(profile.id)
+            phase = .signedOut
+            return
+        }
+
+        profile.accountIdentifier = session.user.id
+        selectedServer = profile
+        pendingAccountReplacement = nil
+        pendingTerms = nil
+        // The avatar filepath is resolved against this server's origin
+        // before the account is persisted, so every avatar surface (account
+        // button, Settings) fetches a complete, authenticated URL.
+        let resolvedUser = Self.accountWithResolvedAvatar(session.user, baseURL: profile.baseURL)
+        await runtime.repository.activate(account: session.user)
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        do {
+            let authenticatedCompatibility = try await runtime.repository.discoverCapabilities(
+                authenticated: true
+            )
+            try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+            compatibility = authenticatedCompatibility
+            profile.capabilities = authenticatedCompatibility.capabilities
+            selectedServer = profile
+        } catch LibreChatProtocolError.unauthorized {
+            throw LibreChatProtocolError.unauthorized
+        } catch {
+            try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+            let capabilities = (profile.capabilities ?? ServerCapabilities())
+                .failingClosedAuthenticatedPolicy()
+            compatibility = CompatibilityResult(
+                supported: true,
+                warnings: [.featureUnavailable("Authenticated server policy")],
+                capabilities: capabilities
+            )
+            profile.capabilities = capabilities
+            selectedServer = profile
+            notice = "Signed in, but account features could not be verified. They remain unavailable until server policy refresh succeeds."
+        }
+        pendingTerms = nil
+        if let terms = profile.capabilities?.publicLegal?.termsOfService,
+           terms.requiresAcceptance {
+            do {
+                let status = try await runtime.repository.termsAcceptanceStatus()
+                if !status.accepted { pendingTerms = terms }
+            } catch {
+                // Match LibreChat's web behavior: a failed optional terms
+                // status lookup must not leave a newly authenticated session
+                // half-installed. Authorization remains authoritative on the
+                // next protected request.
+                AppLog.authentication.error("Terms acceptance status could not be loaded.")
+            }
+        }
+        let uploadManager = UploadManager(
+            profileID: profile.id,
+            accountID: session.user.id,
+            runtime: runtime.protocolRuntime,
+            cache: dependencies.cache
+        )
+        await uploadManager.restore()
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        self.uploadManager = uploadManager
+        try await dependencies.cache.saveAccount(profileID: profile.id, account: resolvedUser)
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        try await dependencies.cache.save(profile: profile, selected: true)
+        try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        replaceProfile(profile)
+        authenticationState = .authenticated(resolvedUser)
+        phase = .signedIn
+        AppLog.authentication.notice("Authenticated session committed to app state.")
+        startGenerationRecovery(
+            repository: runtime.repository,
+            profileID: profile.id,
+            accountID: session.user.id
+        )
+    }
+
+    func refreshAuthenticatedServerPolicy() async {
+        guard phase == .signedIn,
+              !isRefreshingServerPolicy,
+              let runtime = activeRuntime,
+              var profile = selectedServer,
+              profile.accountIdentifier != nil else { return }
+
+        let selectionEpoch = profileSelectionEpoch
+        let wasUnavailable = authenticatedServerPolicyUnavailable
+        isRefreshingServerPolicy = true
+        defer {
+            if selectionEpoch == profileSelectionEpoch {
+                isRefreshingServerPolicy = false
+            }
+        }
+
+        do {
+            let result = try await runtime.repository.discoverCapabilities(authenticated: true)
+            try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+            profile.capabilities = result.capabilities
+            selectedServer = profile
+            compatibility = result
+            replaceProfile(profile)
+            try? await dependencies.cache.save(profile: profile, selected: true)
+            if wasUnavailable { notice = nil }
+        } catch LibreChatProtocolError.unauthorized {
+            await invalidateSession(
+                for: profile,
+                runtime: runtime,
+                selectionEpoch: selectionEpoch
+            )
+        } catch {
+            guard selectionEpoch == profileSelectionEpoch,
+                  selectedServer?.id == profile.id else { return }
+            let capabilities = (profile.capabilities ?? ServerCapabilities())
+                .failingClosedAuthenticatedPolicy()
+            profile.capabilities = capabilities
+            selectedServer = profile
+            compatibility = CompatibilityResult(
+                supported: true,
+                warnings: [.featureUnavailable("Authenticated server policy")],
+                capabilities: capabilities
+            )
+            replaceProfile(profile)
+            try? await dependencies.cache.save(profile: profile, selected: true)
+            notice = "Account features are still unavailable because server policy could not be refreshed."
+        }
+    }
+
+    private func ensureCurrent(
+        runtime: ProfileRuntime,
+        selectionEpoch: Int?
+    ) throws {
+        guard selectedServer?.id == runtime.profile.id,
+              activeRuntime?.profile.id == runtime.profile.id,
+              selectionEpoch.map({ $0 == profileSelectionEpoch }) ?? true else {
+            throw CancellationError()
+        }
+    }
+
+    private func startGenerationRecovery(
+        repository: LibreChatRepository,
+        profileID: ServerProfileID?,
+        accountID: AccountID?,
+        publishToVisibleChat: Bool = false,
+        trigger: GenerationRecoveryTrigger = .foreground
+    ) {
+        guard let profileID, let accountID else { return }
+        generationRecoveryTask?.cancel()
+        let taskID = UUID()
+        let selectionEpoch = profileSelectionEpoch
+        generationRecoveryTaskID = taskID
+        generationRecoveryTask = Task { [weak self] in
+            do {
+                guard let self else { return }
+                let queueRecovery = try await self.reconcileFollowUpAdmissions(
+                    repository: repository,
+                    profileID: profileID,
+                    accountID: accountID,
+                    selectionEpoch: selectionEpoch
+                )
+                try Task.checkCancellation()
+                let snapshots = try await repository.recoverActiveGenerations()
+                try Task.checkCancellation()
+                guard self.generationRecoveryTaskID == taskID,
+                      self.profileSelectionEpoch == selectionEpoch,
+                      self.selectedServer?.id == profileID,
+                      self.selectedServer?.accountIdentifier == accountID else { return }
+                if publishToVisibleChat {
+                    if self.generationRecoverySequence < .max {
+                        self.generationRecoverySequence += 1
+                        self.generationRecoverySignal = GenerationRecoverySignal(
+                            sequence: self.generationRecoverySequence,
+                            profileID: profileID,
+                            accountID: accountID,
+                            activeSnapshots: snapshots,
+                            trigger: trigger
+                        )
+                    }
+                }
+                AppLog.generation.info(
+                    "Generation recovery completed; recoverableCount=\(snapshots.count, privacy: .public), queueJournalCount=\(queueRecovery.journalCount, privacy: .public), queueReconciledCount=\(queueRecovery.reconciledCount, privacy: .public)."
+                )
+                self.finishGenerationRecovery(taskID: taskID)
+            } catch is CancellationError {
+                self?.finishGenerationRecovery(taskID: taskID)
+                return
+            } catch LibreChatProtocolError.unauthorized {
+                guard let self,
+                      self.generationRecoveryTaskID == taskID,
+                      self.profileSelectionEpoch == selectionEpoch,
+                      self.selectedServer?.id == profileID,
+                      self.selectedServer?.accountIdentifier == accountID else { return }
+                self.finishGenerationRecovery(taskID: taskID)
+                await self.expireSession()
+            } catch {
+                guard let self, self.generationRecoveryTaskID == taskID else { return }
+                self.finishGenerationRecovery(taskID: taskID)
+                AppLog.generation.error("Server generation discovery failed; local checkpoints remain available.")
+            }
+        }
+    }
+
+    private func reconcileFollowUpAdmissions(
+        repository: LibreChatRepository,
+        profileID: ServerProfileID,
+        accountID: AccountID,
+        selectionEpoch: Int
+    ) async throws -> (journalCount: Int, reconciledCount: Int) {
+        let namespaces: [FollowUpQueueNamespace]
+        do {
+            namespaces = try await dependencies.cache.followUpQueueNamespaces(
+                profileID: profileID,
+                accountID: accountID
+            )
+        } catch {
+            // A malformed queue journal is never treated as empty or removed.
+            // Ordinary generation recovery may continue, but automatic queue
+            // actions remain disabled until that cache state is repaired.
+            AppLog.persistence.error(
+                "Follow-up queue discovery failed closed; automatic queue reconciliation was skipped."
+            )
+            return (0, 0)
+        }
+
+        var reconciledCount = 0
+        for namespace in namespaces {
+            try Task.checkCancellation()
+            guard profileSelectionEpoch == selectionEpoch,
+                  selectedServer?.id == profileID,
+                  selectedServer?.accountIdentifier == accountID else {
+                throw CancellationError()
+            }
+            let coordinator = FollowUpQueueDrainCoordinator(
+                cache: dependencies.cache,
+                repository: repository,
+                namespace: namespace
+            )
+            do {
+                switch try await coordinator.reconcileOutstandingAdmission() {
+                case .admitted, .committed, .deliveredWithoutEpoch, .delivered:
+                    reconciledCount += 1
+                case .noWork, .deliveryUncertain, .blocked, .ambiguous:
+                    break
+                }
+            } catch FollowUpDrainError.unauthorized {
+                throw LibreChatProtocolError.unauthorized
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Transport-unavailable or individually corrupt journals stay
+                // locked under their exact attempt and cannot block recovery
+                // for another conversation in the same account.
+                continue
+            }
+        }
+        return (namespaces.count, reconciledCount)
+    }
+
+    private func cancelGenerationRecovery() {
+        generationRecoveryTask?.cancel()
+        generationRecoveryTask = nil
+        generationRecoveryTaskID = nil
+    }
+
+    private func finishGenerationRecovery(taskID: UUID) {
+        guard generationRecoveryTaskID == taskID else { return }
+        generationRecoveryTask = nil
+        generationRecoveryTaskID = nil
+    }
+
+    private func receiveConnectivityPath(reachable: Bool) {
+        guard connectivityRecoveryGate.receivesPath(reachable: reachable),
+              isApplicationActive,
+              phase == .signedIn,
+              !isOffline,
+              let repository = activeRuntime?.repository,
+              let profileID = selectedServer?.id,
+              let accountID = selectedServer?.accountIdentifier else { return }
+
+        AppLog.generation.info("Network connectivity returned; starting generation reconciliation.")
+        Task { await uploadManager?.applicationBecameActive() }
+        startGenerationRecovery(
+            repository: repository,
+            profileID: profileID,
+            accountID: accountID,
+            publishToVisibleChat: true,
+            trigger: .connectivity
+        )
+    }
+
+    private func invalidateSession(
+        for profile: ServerProfile,
+        runtime: ProfileRuntime,
+        selectionEpoch: Int
+    ) async {
+        try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        generationRecoverySignal = nil
+        if let accountID = profile.accountIdentifier {
+            await hideCache(profileID: profile.id, accountID: accountID)
+        }
+        guard selectionEpoch == profileSelectionEpoch,
+              selectedServer?.id == profile.id else { return }
+        authenticationState = .signedOut(profile.id)
+        phase = .signedOut
+    }
+
+    private func hideCache(profileID: ServerProfileID, accountID: AccountID) async {
+        do {
+            try await dependencies.cache.setCacheVisible(
+                false,
+                profileID: profileID,
+                accountID: accountID
+            )
+        } catch {
+            // If visibility metadata cannot be persisted, deletion is safer than
+            // exposing signed-out data through a later offline restoration.
+            do {
+                try await dependencies.cache.purge(profileID: profileID, accountID: accountID)
+            } catch {
+                AppLog.persistence.fault("Signed-out cache could not be hidden or purged.")
+            }
+        }
+    }
+
+    private func updateSelectedCapabilities(_ capabilities: ServerCapabilities) {
+        guard var profile = selectedServer else { return }
+        profile.capabilities = capabilities
+        selectedServer = profile
+        replaceProfile(profile)
+    }
+
+    private func replaceProfile(_ profile: ServerProfile) {
+        if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
+            profiles[index] = profile
+        } else {
+            profiles.insert(profile, at: 0)
+        }
+    }
+
+    private func migrateLegacyServerIfNeeded() async throws {
+        guard profiles.isEmpty,
+              let saved = UserDefaults.standard.string(forKey: Self.legacyServerKey),
+              let address = try? ServerAddress.parse(saved) else { return }
+        let profile = ServerProfile(
+            baseURL: address.url,
+            displayName: address.displayName,
+            trustPolicy: address.url.scheme == "http" ? .localDevelopment : .system
+        )
+        try await dependencies.cache.save(profile: profile, selected: true)
+        profiles = [profile]
+        UserDefaults.standard.removeObject(forKey: Self.legacyServerKey)
+    }
+}
