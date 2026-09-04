@@ -391,6 +391,11 @@ final class AppModel {
     func select(profile: ServerProfile, restoring: Bool = false) async {
         profileSelectionEpoch &+= 1
         let selectionEpoch = profileSelectionEpoch
+        // Every session transition flushes session-scoped image caches so one
+        // account's avatars, icons, and file previews can never render in
+        // another account's session.
+        ServerEntityImageStore.removeAllCachedImages()
+        FileImagePreviewStore.removeAllCachedImages()
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         isWorking = true
@@ -777,11 +782,15 @@ final class AppModel {
 
     func applicationBecameInactive() async {
         isApplicationActive = false
+        // The lock engages synchronously, before the first suspension point:
+        // iOS can capture the app-switcher snapshot as soon as the scene
+        // resigns active, and stream teardown below can await persistence
+        // work with conversations still on screen.
+        if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
         AppLog.generation.info("Application became inactive; checkpointing and detaching generation streams.")
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await activeRuntime?.repository.detachActiveStreams()
-        if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
     }
 
     func applicationBecameActive() async {

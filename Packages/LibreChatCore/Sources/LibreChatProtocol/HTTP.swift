@@ -283,9 +283,10 @@ public actor HTTPTransport {
         pathComponents: [String]? = nil,
         queryItems: [URLQueryItem] = [],
         headers: [String: String] = [:],
-        body: Data? = nil
+        body: Data? = nil,
+        baseURL: URL? = nil
     ) async throws -> URLRequest {
-        var url = baseURL
+        var url = baseURL ?? self.baseURL
         if let pathComponents {
             for component in pathComponents {
                 url = try Self.appendingEncodedPathComponent(component, to: url)
@@ -988,7 +989,8 @@ public actor RESTClient {
         headers: [String: String] = [:],
         body: Data? = nil,
         authorized: Bool,
-        retryPolicy: RequestRetryPolicy = .never
+        retryPolicy: RequestRetryPolicy = .never,
+        baseURL: URL? = nil
     ) async throws -> HTTPDownloadResponse {
         let maximumAttempts: Int = switch retryPolicy {
         case .never: 1
@@ -1011,7 +1013,8 @@ public actor RESTClient {
                     pathComponents: pathComponents,
                     queryItems: queryItems,
                     headers: headers,
-                    body: body
+                    body: body,
+                    baseURL: baseURL
                 )
                 if authorized {
                     do {

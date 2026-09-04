@@ -11,18 +11,18 @@ final class ProtocolContractTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDecodesEventSplitAtEveryByteBoundary() {
+    func testDecodesEventSplitAtEveryByteBoundary() throws {
         let payload = Data("event: message\nid: 42\ndata: {\"delta\":\"Hello\"}\n\n".utf8)
         var decoder = LibreChatProtocol.SSEDecoder()
         var events: [LibreChatProtocol.ServerSentEvent] = []
-        for byte in payload { events.append(contentsOf: decoder.append(Data([byte]))) }
+        for byte in payload { events.append(contentsOf: try decoder.append(Data([byte]))) }
         XCTAssertEqual(events, [.init(event: "message", id: "42", data: "{\"delta\":\"Hello\"}")])
     }
 
-    func testJoinsMultilineDataAndIgnoresComments() {
+    func testJoinsMultilineDataAndIgnoresComments() throws {
         let payload = Data(": keep-alive\r\ndata: first\r\ndata: second\r\n\r\n".utf8)
         var decoder = LibreChatProtocol.SSEDecoder()
-        XCTAssertEqual(decoder.append(payload), [.init(data: "first\nsecond")])
+        XCTAssertEqual(try decoder.append(payload), [.init(data: "first\nsecond")])
     }
 
     func testConversationPageDecodesCurrentCursorEnvelope() throws {

@@ -119,7 +119,8 @@ public actor AuthSession {
                 forHTTPHeaderField: "Authorization"
             )
         let response = try await transport.execute(request)
-        guard (200..<300).contains(response.statusCode) else { return nil }
+        guard (200..<300).contains(response.statusCode),
+              !Self.isBrowserLoginRedirect(response.finalURL) else { return nil }
         // Adopt the server's current user so role or profile changes made
         // between launches are not overwritten by the stale persisted copy.
         // If the payload cannot be mapped, keep the persisted user rather
@@ -322,15 +323,23 @@ public actor AuthSession {
     }
 
     public func logout() async {
-        if let accessToken,
-           let request = try? await transport.request(
-               method: .post,
-               path: "api/auth/logout",
-               headers: ["Authorization": "Bearer \(accessToken)"]
-           ) {
-            _ = try? await transport.execute(request)
+        // Build the best-effort request first: it needs the bearer and the
+        // session cookies, which clearing below destroys. Local credentials
+        // are cleared before the network call so a slow or unreachable
+        // endpoint cannot leave the app signed in for the transport timeout;
+        // the pre-built request still carries the captured credentials.
+        var pendingRequest: URLRequest?
+        if let accessToken {
+            pendingRequest = try? await transport.request(
+                method: .post,
+                path: "api/auth/logout",
+                headers: ["Authorization": "Bearer \(accessToken)"]
+            )
         }
         try? await clearAuthentication(clearCookies: true)
+        if let pendingRequest {
+            _ = try? await transport.execute(pendingRequest)
+        }
     }
 
     private static func validate(_ response: HTTPResponse) throws {
@@ -522,10 +531,11 @@ public struct LibreChatRuntime: Sendable {
         secretStore: (any SecretStore)? = nil,
         observability: ProtocolObservability = .disabled
     ) -> LibreChatRuntime {
+        let sessionStore = secretStore ?? MirroredSecretStore()
         let cookieJar = ProfileCookieJar(
             profileID: profile.id,
             baseURL: profile.baseURL,
-            secretStore: secretStore ?? MirroredSecretStore()
+            secretStore: sessionStore
         )
         let transport = HTTPTransport.live(
             baseURL: profile.baseURL,
@@ -535,6 +545,7 @@ public struct LibreChatRuntime: Sendable {
         let authSession = AuthSession(
             transport: transport,
             profileID: profile.id,
+            secretStore: sessionStore,
             observability: observability
         )
         let restClient = RESTClient(

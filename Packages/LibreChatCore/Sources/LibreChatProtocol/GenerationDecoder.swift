@@ -706,21 +706,7 @@ public struct LibreChatGenerationDecoder: Sendable {
     /// loopback HTTP exception used by local development; custom schemes,
     /// credentials, and fragments never become actionable domain state.
     private func safeExternalAuthenticationURL(_ rawValue: String) -> URL? {
-        guard let components = URLComponents(string: rawValue),
-              components.user == nil,
-              components.password == nil,
-              components.fragment == nil,
-              let scheme = components.scheme?.lowercased(),
-              let host = components.host?.lowercased(),
-              !host.isEmpty else { return nil }
-        guard scheme == "https" || (scheme == "http" && Self.isLoopback(host)) else {
-            return nil
-        }
-        return components.url
-    }
-
-    private static func isLoopback(_ host: String) -> Bool {
-        host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+        ToolAuthenticationURLPolicy.validatedURL(from: rawValue)
     }
 
     private func questionItem(from object: [String: JSONValue]) -> UserQuestionItem? {

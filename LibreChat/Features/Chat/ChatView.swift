@@ -33,6 +33,10 @@ private struct SkillPickerPresentation: Identifiable {
 }
 
 struct ChatView: View {
+    /// Hard ceiling for whole-file imports: server limits produce their own
+    /// precise rejections, but nothing may materialize an unbounded file.
+    static let maximumImportedFileBytes = 200 * 1_048_576
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -747,7 +751,14 @@ struct ChatView: View {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 do {
-                    let values = try url.resourceValues(forKeys: [.contentTypeKey, .nameKey])
+                    let values = try url.resourceValues(forKeys: [.contentTypeKey, .nameKey, .fileSizeKey])
+                    // Security-scoped files are materialized whole below, so
+                    // an enormous import is rejected from its declared size
+                    // instead of ballooning memory before server validation.
+                    if let fileSize = values.fileSize, fileSize > Self.maximumImportedFileBytes {
+                        model.errorMessage = "That file is too large to attach (over \(Self.maximumImportedFileBytes / 1_048_576) MB)."
+                        return
+                    }
                     try await model.attach(
                         data: Data(contentsOf: url),
                         filename: values.name ?? url.lastPathComponent,

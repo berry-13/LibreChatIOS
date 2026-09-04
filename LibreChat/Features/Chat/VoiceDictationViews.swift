@@ -80,7 +80,14 @@ final class VoiceDictationModel {
                 return
             }
             let id = try await capture.start()
-            try Task.checkCancellation()
+            do {
+                try Task.checkCancellation()
+            } catch {
+                // The recorder exists by now; cancellation must not leave the
+                // microphone recording invisibly for the session limit.
+                await capture.cancel(id)
+                throw error
+            }
             guard self.operationID == operationID else {
                 await capture.cancel(id)
                 return

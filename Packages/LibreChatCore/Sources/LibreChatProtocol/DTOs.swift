@@ -530,6 +530,30 @@ public struct AgentListResponseDTO: Codable, Equatable, Sendable {
     }
 }
 
+/// Authentication links may only target HTTPS, or loopback HTTP for local
+/// tooling. Persisted history satisfies the same policy the live event
+/// decoder enforces, so a saved `auth_url` can never stage a `file:`/`custom:`
+/// handler invocation or a cleartext credential submission.
+enum ToolAuthenticationURLPolicy {
+    static func validatedURL(from rawValue: String) -> URL? {
+        guard let components = URLComponents(string: rawValue),
+              components.user == nil,
+              components.password == nil,
+              components.fragment == nil,
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(),
+              !host.isEmpty else { return nil }
+        guard scheme == "https" || (scheme == "http" && isLoopback(host)) else {
+            return nil
+        }
+        return components.url
+    }
+
+    private static func isLoopback(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+    }
+}
+
 public struct LibreChatMessageDTO: Codable, Equatable, Sendable {
     public var messageID: String?
     public var conversationID: String?
@@ -626,7 +650,7 @@ public struct LibreChatMessageDTO: Codable, Equatable, Sendable {
             author: author,
             model: model,
             endpoint: endpoint,
-            createdAt: createdAt.flatMap { ISO8601DateFormatter().date(from: $0) },
+            createdAt: createdAt.flatMap(Self.messageDate),
             isUnfinished: unfinished,
             finishReason: finishReason,
             feedback: try? feedback?.domainModel(),
@@ -860,9 +884,17 @@ public struct LibreChatMessageDTO: Codable, Equatable, Sendable {
             progress: nested["progress"]?.doubleValue ?? object["progress"]?.doubleValue,
             authorizationURL: (nested["auth_url"]?.stringValue
                 ?? nested["authorization_url"]?.stringValue
-                ?? object["auth_url"]?.stringValue).flatMap(URL.init(string:)),
+                ?? object["auth_url"]?.stringValue).flatMap(ToolAuthenticationURLPolicy.validatedURL(from:)),
             subagentTrace: subagentTrace(from: nested)
         )
+    }
+
+    /// LibreChat serializes Mongo dates with `toISOString`, which always
+    /// carries fractional seconds; the plain form is the fallback.
+    static func messageDate(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
     static func subagentTrace(from object: [String: JSONValue]) -> SubagentTraceSummary? {

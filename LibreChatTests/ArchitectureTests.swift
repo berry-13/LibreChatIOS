@@ -5571,7 +5571,6 @@ final class ArchitectureTests: XCTestCase {
     }
 
     func testPersistentCacheFailureIsRepairedByDiscardingTheStoreOnce() throws {
-        struct InjectedPersistentStoreFailure: Error {}
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "LibreChatCacheRepair-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -5588,7 +5587,11 @@ final class ArchitectureTests: XCTestCase {
         let dependencies = AppDependencies.live(
             persistentContainerFactory: { schema, _ in
                 attempts += 1
-                if attempts == 1 { throw InjectedPersistentStoreFailure() }
+                if attempts == 1 {
+                    // A corrupt-file signature is the only failure class
+                    // allowed to discard the persistent store.
+                    throw NSError(domain: NSCocoaErrorDomain, code: 258)
+                }
                 return try ModelContainer(
                     for: schema,
                     configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
@@ -5605,6 +5608,35 @@ final class ArchitectureTests: XCTestCase {
         XCTAssertEqual(dependencies.cacheHealth, .healthyPersistent)
         XCTAssertNil(AppModel(dependencies: dependencies).cacheRepairNotice)
         XCTAssertFalse(FileManager.default.fileExists(atPath: storeURL.path + "-wal"))
+    }
+
+    /// Transient failures (disk pressure, temporary I/O) must leave the store
+    /// on disk — it holds unsent drafts and staged uploads — and degrade to
+    /// the in-memory recovery store instead of destroying user data.
+    func testTransientPersistentCacheFailureKeepsTheStoreOnDisk() throws {
+        struct InjectedTransientFailure: Error {}
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "LibreChatCacheTransient-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let storeURL = directory.appending(path: "cache.store")
+        XCTAssertTrue(
+            FileManager.default.createFile(atPath: storeURL.path + "-wal", contents: Data([0x1])),
+            "The transient test needs a pre-existing sidecar to prove it survives"
+        )
+
+        let dependencies = AppDependencies.live(
+            persistentContainerFactory: { _, _ in throw InjectedTransientFailure() },
+            storeURL: storeURL
+        )
+
+        XCTAssertEqual(dependencies.cacheHealth, .degraded(.persistentStoreUnavailable))
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: storeURL.path + "-wal"),
+            "Transient failures must not delete the store"
+        )
+        XCTAssertNotNil(AppModel(dependencies: dependencies).cacheRepairNotice)
     }
 
     func testV1PersistentCacheRoundTripsAcrossContainerReopen() async throws {

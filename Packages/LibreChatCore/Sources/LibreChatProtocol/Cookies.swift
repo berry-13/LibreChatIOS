@@ -255,10 +255,16 @@ public actor ProfileCookieJar {
 
     public func restore() async throws {
         guard !restored else { return }
-        restored = true
-        guard let data = try await secretStore.data(for: storageKey) else { return }
+        // The flag is set only after a definitive outcome. A transient
+        // secret-store failure must keep restoration pending so the next
+        // request retries instead of permanently missing the refresh cookie.
+        guard let data = try await secretStore.data(for: storageKey) else {
+            restored = true
+            return
+        }
         cookies = try JSONDecoder().decode([StoredCookie].self, from: data)
         removeExpired()
+        restored = true
     }
 
     public func cookieHeader(for url: URL) async -> String? {
@@ -391,8 +397,15 @@ public actor ProfileCookieJar {
         let isSecureContext = url.scheme?.lowercased() == "https"
             || Self.isSecureContextHost(url.host)
         if cookie.isSecure && !isSecureContext { return false }
+        // RFC 6265 path-match: exact match, a cookie path ending in "/", or
+        // a "/" boundary right after the prefix. Without the boundary a
+        // cookie scoped to /api/auth would also leak to /api/authentication.
         let requestPath = url.path.isEmpty ? "/" : url.path
-        return requestPath.hasPrefix(cookie.path.isEmpty ? "/" : cookie.path)
+        let cookiePath = cookie.path.isEmpty ? "/" : cookie.path
+        guard requestPath.hasPrefix(cookiePath) else { return false }
+        if cookiePath == requestPath || cookiePath.hasSuffix("/") { return true }
+        let next = requestPath.index(requestPath.startIndex, offsetBy: cookiePath.count)
+        return requestPath[next] == "/"
     }
 
     /// Browsers treat loopback origins as secure contexts: `Secure` cookies

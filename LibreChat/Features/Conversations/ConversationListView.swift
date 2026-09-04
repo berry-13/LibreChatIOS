@@ -1713,6 +1713,13 @@ enum ServerEntityImageStore {
     static func store(_ image: UIImage, for url: URL) {
         cache.setObject(image, forKey: url.absoluteString as NSString)
     }
+
+    /// Authenticated imagery is session-scoped: every account or profile
+    /// transition clears the cache so one session can never render another
+    /// session's avatars or icons.
+    static func removeAllCachedImages() {
+        cache.removeAllObjects()
+    }
 }
 
 /// LibreChat's endpoint branding, mirrored from the web client: white marks
