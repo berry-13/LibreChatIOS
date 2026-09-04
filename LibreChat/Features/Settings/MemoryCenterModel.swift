@@ -33,6 +33,9 @@ final class MemoryCenterModel {
     private let isOffline: @MainActor () -> Bool
     private let onUnauthorized: @MainActor () async -> Void
     private let onPreferenceChanged: @MainActor (Bool) async -> Void
+    /// Advances on every confirmed mutation so a reload that captured
+    /// pre-mutation state can never install over the newer snapshot.
+    private var reloadRevision = 0
 
     private(set) var state: State = .idle
     private(set) var snapshot: MemorySnapshot?
@@ -111,12 +114,19 @@ final class MemoryCenterModel {
             return
         }
         if snapshot == nil { state = .loading }
+        // A reload that captured pre-mutation state must never install over a
+        // confirmed mutation's newer snapshot.
+        reloadRevision &+= 1
+        let revision = reloadRevision
         do {
-            snapshot = try await repository.memories()
+            let fresh = try await repository.memories()
+            guard revision == reloadRevision else { return }
+            snapshot = fresh
             normalizePartition()
             operationError = nil
             state = .loaded
         } catch {
+            guard revision == reloadRevision else { return }
             await handle(error, clearPrivateState: true)
         }
     }
@@ -213,6 +223,9 @@ final class MemoryCenterModel {
     }
 
     private func refreshAfterConfirmedMutation() async {
+        // Supersedes any reload that was still in flight with pre-mutation
+        // data.
+        reloadRevision &+= 1
         do {
             snapshot = try await repository.memories()
             normalizePartition()

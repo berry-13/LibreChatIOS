@@ -32,6 +32,11 @@ public struct SharedLinkLookupDTO: Decodable, Equatable, Sendable {
         guard let conversationID = conversationID?.nonEmpty else {
             throw DTOMapperError.missingRequiredField("sharedLink.conversationId")
         }
+        // A stale or foreign lookup payload must never surface another
+        // conversation's share URL as if it belonged to the viewed one.
+        guard conversationID == requestedConversationID.rawValue else {
+            throw DTOMapperError.invalidField("sharedLink.conversationId")
+        }
 
         return SharedLinkState(
             conversationID: ConversationID(rawValue: conversationID),

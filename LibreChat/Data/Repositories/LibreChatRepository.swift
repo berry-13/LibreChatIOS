@@ -1511,6 +1511,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
     /// session's refresh cookie, so same-origin assets ride the cookie jar;
     /// other-origin assets (public CDNs) use a plain fetch.
     func imageData(at url: URL) async throws -> Data {
+        let maximumImageBytes = 25 * 1_048_576
         let baseComponents = URLComponents(url: profile.baseURL, resolvingAgainstBaseURL: false)
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         func defaultPort(for scheme: String?) -> Int {
@@ -1525,10 +1526,21 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             var basePath = baseComponents.path
             if basePath.hasSuffix("/") { basePath.removeLast() }
             var fullPath = components.path
+            var pathEscapesDeploymentBase = false
             if !basePath.isEmpty, fullPath.hasPrefix(basePath) {
                 fullPath = String(fullPath.dropFirst(basePath.count))
+            } else {
+                // The image lives at the origin root, outside a deployment
+                // subpath: the transport must target the origin, not append
+                // the path to the profile base.
+                pathEscapesDeploymentBase = !basePath.isEmpty
             }
             let path = fullPath.hasPrefix("/") ? String(fullPath.dropFirst()) : fullPath
+            var originComponents = URLComponents()
+            originComponents.scheme = components.scheme
+            originComponents.host = components.host
+            originComponents.port = components.port
+            originComponents.path = "/"
             let response = try await runtime.restClient.downloadResponse(
                 method: .get,
                 path: path,
@@ -1536,13 +1548,31 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                 // percent-encoded form would double-escape signature
                 // parameters and break authenticated image fetches.
                 queryItems: components.queryItems ?? [],
-                authorized: false
+                authorized: false,
+                baseURL: pathEscapesDeploymentBase ? originComponents.url : nil
             )
             defer { try? FileManager.default.removeItem(at: response.localURL) }
+            let byteCount = ((try? FileManager.default.attributesOfItem(
+                atPath: response.localURL.path
+            ))?[.size] as? NSNumber)?.intValue ?? 0
+            guard byteCount <= maximumImageBytes else {
+                throw LibreChatProtocolError.unsupported(
+                    "That image is too large to display (\(byteCount) bytes)."
+                )
+            }
             return try Data(contentsOf: response.localURL)
         }
-        let (data, _) = try await URLSession.shared.data(from: url)
-        return data
+        let (localURL, _) = try await URLSession.shared.download(from: url)
+        defer { try? FileManager.default.removeItem(at: localURL) }
+        let byteCount = ((try? FileManager.default.attributesOfItem(
+            atPath: localURL.path
+        ))?[.size] as? NSNumber)?.intValue ?? 0
+        guard byteCount <= maximumImageBytes else {
+            throw LibreChatProtocolError.unsupported(
+                "That image is too large to display (\(byteCount) bytes)."
+            )
+        }
+        return try Data(contentsOf: localURL)
     }
 
     func projects(options: ChatProjectListOptions = .init()) async throws -> ChatProjectPage {
@@ -1718,6 +1748,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         let accountID = try activeAccountID()
         let request = try LibreChatProjectsAPI.assign(conversationID: id, projectID: projectID)
         let assignment = try await runtime.restClient.send(request).domainModel()
+        // A stale or malformed success payload naming a different
+        // conversation or project must never be persisted or surfaced as a
+        // completed move.
+        guard assignment.conversation.id == id,
+              assignment.projectID == projectID else {
+            throw LibreChatProtocolError.invalidResponse
+        }
         try await cache.save(
             page: ConversationPage(conversations: [assignment.conversation]),
             profileID: profile.id,
@@ -3097,7 +3134,15 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                 profileID: requestedProfileID,
                 accountID: requestedAccountID
             )
-            guard Self.avatarIdentity(account.avatarURL) != Self.avatarIdentity(previousAvatarURL) else {
+            // The server reports its avatar as a site-relative path while the
+            // app model carries a resolved absolute URL; both sides are
+            // normalized against the profile base so an unchanged avatar
+            // cannot masquerade as a change and flip the outcome to unknown.
+            let resolvedAccountAvatar = Self.resolvingSiteRelativeURL(
+                account.avatarURL,
+                baseURL: profile.baseURL
+            )
+            guard Self.avatarIdentity(resolvedAccountAvatar) != Self.avatarIdentity(previousAvatarURL) else {
                 throw AccountProfileError.avatarOutcomeUnknown
             }
             return account
@@ -3139,6 +3184,14 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         components?.query = nil
         components?.fragment = nil
         return components?.string
+    }
+
+    /// Server avatar fields are site-relative paths (`/images/...`); the app
+    /// model resolves them against the profile base. This gives comparisons
+    /// one canonical, absolute form.
+    private static func resolvingSiteRelativeURL(_ url: URL?, baseURL: URL) -> URL? {
+        guard let url, url.host == nil, !url.path.isEmpty else { return url }
+        return baseURL.appending(path: url.path)
     }
 
     func deleteAccount(proof: TwoFactorProof?) async throws {

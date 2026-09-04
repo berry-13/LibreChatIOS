@@ -64,6 +64,10 @@ final class ConversationListModel {
     /// Set once a live server refresh lands during loadIfNeeded; the racing
     /// cache read must not overwrite it afterwards.
     private var liveRefreshArrived = false
+    /// Mutations (delete, rename, pin, archive, duplicate) advance this so an
+    /// in-flight listing request that captured older state can never install
+    /// a stale page over the confirmed local edit.
+    private var listingRevision = 0
     private(set) var targetCatalog: TargetCatalogSnapshot?
     private(set) var isLoadingTargets = false
     private(set) var targetError: String?
@@ -244,9 +248,12 @@ final class ConversationListModel {
             state = conversations.isEmpty ? .failed("No cached conversations are available offline.") : .loaded
             return
         }
+        listingRevision &+= 1
+        let revision = listingRevision
 
         do {
             let page = try await repository.conversations(cursor: nil, limit: 25)
+            guard revision == listingRevision else { return }
             let refreshedIDs = Set(page.conversations.map(\.id))
             liveRefreshArrived = true
             conversations = page.conversations + conversations.filter { !refreshedIDs.contains($0.id) }
@@ -258,6 +265,7 @@ final class ConversationListModel {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
             guard !(error is CancellationError) else { return }
+            guard revision == listingRevision else { return }
             state = conversations.isEmpty ? .failed(error.userFacingMessage) : .loaded
             paginationError = conversations.isEmpty ? nil : "Couldn’t refresh. Showing saved conversations."
             isShowingCache = !conversations.isEmpty
@@ -271,9 +279,13 @@ final class ConversationListModel {
               !isOffline() else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
+        // A pagination result only belongs to the listing that produced its
+        // cursor; a refresh that lands first invalidates it entirely.
+        let revision = listingRevision
 
         do {
             let page = try await repository.conversations(cursor: nextCursor, limit: 25)
+            guard revision == listingRevision else { return }
             let existingIDs = Set(conversations.map(\.id))
             conversations.append(contentsOf: page.conversations.filter { !existingIDs.contains($0.id) })
             self.nextCursor = page.nextCursor
@@ -282,6 +294,7 @@ final class ConversationListModel {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
             guard !(error is CancellationError) else { return }
+            guard revision == listingRevision else { return }
             paginationError = error.userFacingMessage
         }
     }
@@ -295,6 +308,7 @@ final class ConversationListModel {
         }
         activeOperationID = conversation.id
         defer { activeOperationID = nil }
+        listingRevision &+= 1
         do {
             try await repository.delete(id: conversation.id)
             conversations.removeAll { $0.id == conversation.id }
@@ -309,6 +323,7 @@ final class ConversationListModel {
         guard !normalizedTitle.isEmpty, activeOperationID == nil, !isOffline() else { return }
         activeOperationID = conversation.id
         defer { activeOperationID = nil }
+        listingRevision &+= 1
         do {
             includeConversation(try await repository.rename(id: conversation.id, title: normalizedTitle))
             paginationError = nil
@@ -322,6 +337,7 @@ final class ConversationListModel {
         guard activeOperationID == nil, !isOffline() else { return }
         activeOperationID = conversation.id
         defer { activeOperationID = nil }
+        listingRevision &+= 1
         do {
             includeConversation(try await repository.pin(id: conversation.id, pinned: pinned))
             paginationError = nil
@@ -335,6 +351,7 @@ final class ConversationListModel {
         guard activeOperationID == nil, !isOffline() else { return }
         activeOperationID = conversation.id
         defer { activeOperationID = nil }
+        listingRevision &+= 1
         do {
             _ = try await repository.archive(id: conversation.id, isArchived: true)
             conversations.removeAll { $0.id == conversation.id }
@@ -356,6 +373,7 @@ final class ConversationListModel {
               !duplicationUncertainIDs.contains(conversation.id) else { return nil }
         activeOperationID = conversation.id
         defer { activeOperationID = nil }
+        listingRevision &+= 1
         do {
             let result = try await repository.duplicate(ConversationDuplicationRequest(
                 profileID: profileID,

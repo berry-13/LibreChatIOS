@@ -1,5 +1,6 @@
 import Foundation
 import LibreChatDomain
+import LibreChatProtocol
 import Observation
 
 /// UI-facing state for the project browser.
@@ -34,6 +35,9 @@ final class ProjectListModel {
     private(set) var isLoadingMore = false
     private(set) var isRefreshing = false
     private(set) var isCreating = false
+    /// Set when a create request's outcome becomes unknowable after dispatch;
+    /// cleared by a successful listing reconciliation in reload().
+    private(set) var isCreationOutcomeUnknown = false
     private(set) var isAssigning = false
     private(set) var updatingIDs: Set<ProjectID> = []
     private(set) var deletingIDs: Set<ProjectID> = []
@@ -74,6 +78,8 @@ final class ProjectListModel {
         requestRevision &+= 1
         let revision = requestRevision
         await loadFirstPage(revision: revision)
+        // The confirmed listing resolves any earlier unknown create outcome.
+        if state == .loaded { isCreationOutcomeUnknown = false }
     }
 
     /// Call from a SwiftUI `.onChange(of: searchQuery)` handler.
@@ -146,6 +152,13 @@ final class ProjectListModel {
             operationError = isOffline() ? "Creating projects is unavailable offline." : operationError
             return nil
         }
+        // A lost or malformed create response may have committed server-side.
+        // A retry could create a duplicate, so creation stays locked until a
+        // listing reconciliation resolves the outcome.
+        guard !isCreationOutcomeUnknown else {
+            operationError = "The previous create attempt was never confirmed. Refresh the projects list, then try again if it is missing."
+            return nil
+        }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             operationError = "A project name is required."
@@ -167,6 +180,15 @@ final class ProjectListModel {
             state = .loaded
             return project
         } catch {
+            // Transport, cancellation, and malformed-success outcomes leave
+            // the request's fate unknown; a retry may duplicate the project.
+            switch error as? LibreChatProtocolError {
+            case .transport, .decoding, .invalidResponse:
+                isCreationOutcomeUnknown = true
+            default:
+                break
+            }
+            if error is CancellationError { isCreationOutcomeUnknown = true }
             await handle(error)
             return nil
         }

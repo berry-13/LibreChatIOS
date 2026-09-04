@@ -46,8 +46,19 @@ actor UploadManager: UploadRepository {
                 )
                 continue
             }
-            if upload.state == .uploading { upload.state = .staged }
+            if upload.state == .uploading {
+                // The pre-launch dispatch may already have committed
+                // server-side; only never-dispatched staged records may be
+                // re-enqueued as-is.
+                upload.state = .deliveryUncertain
+            }
             uploadsByID[upload.id] = upload
+            if upload.state == .staged {
+                // Staging is persisted before dispatch, so a staged record
+                // never reached the network and can be uploaded now instead
+                // of blocking the composer as "Preparing…" forever.
+                try? await enqueue(upload)
+            }
         }
         publish()
         await scheduleUsageRenewal(immediate: true)
@@ -158,7 +169,7 @@ actor UploadManager: UploadRepository {
         let directory = root
             .appending(path: "Uploads", directoryHint: .isDirectory)
             .appending(path: profileID.rawValue, directoryHint: .isDirectory)
-            .appending(path: accountID.rawValue, directoryHint: .isDirectory)
+            .appending(path: Self.safePathComponent(accountID.rawValue), directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let id = UUID()
         let localURL = directory.appending(path: "\(id.uuidString)-\(sanitized)")
@@ -178,7 +189,16 @@ actor UploadManager: UploadRepository {
             height: dimensions?.height
         )
         uploadsByID[id] = upload
-        try await cache.save(upload: upload)
+        do {
+            try await cache.save(upload: upload)
+        } catch {
+            // Roll the staging back: without a cache record the upload is
+            // invisible to the user yet still counts against limits, and its
+            // file would never be discovered for cleanup after a relaunch.
+            uploadsByID.removeValue(forKey: id)
+            try? FileManager.default.removeItem(at: localURL)
+            throw error
+        }
         publish()
         try await enqueue(upload)
         return upload
@@ -800,6 +820,15 @@ actor UploadManager: UploadRepository {
         return (width, height)
     }
 
+    /// Server-supplied account identifiers are opaque strings, never path
+    /// structure: encoding keeps a hostile id like `../..` inside the account
+    /// directory namespace instead of escaping it.
+    private static func safePathComponent(_ raw: String) -> String {
+        String(raw.map { character in
+            character.isLetter || character.isNumber || character == "-" || character == "_" ? character : "_"
+        })
+    }
+
     static func preparedUploadData(
         data: Data,
         mimeType: String,
@@ -823,6 +852,10 @@ actor UploadManager: UploadRepository {
         }
         let ratio = min(1, min(Double(maximumWidth) / width, Double(maximumHeight) / height))
         guard ratio < 1 else { return (data, mimeType) }
+        // Animated (multi-frame) sources pass through untouched: rendering
+        // frame zero into a single-frame JPEG would silently strip the
+        // animation before the compaction guard for animated formats runs.
+        guard CGImageSourceGetCount(source) <= 1 else { return (data, mimeType) }
         let maximumPixelSize = max(1, Int(floor(max(width * ratio, height * ratio))))
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

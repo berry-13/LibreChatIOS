@@ -316,7 +316,11 @@ private struct OAuthWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        // The OAuth flow only needs cookies for its own lifetime. A
+        // persistent store would keep the provider's session cookies after
+        // native logout, letting a later sign-in silently reuse or harvest
+        // the previous account's still-valid refresh cookie.
+        configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true

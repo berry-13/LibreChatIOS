@@ -712,6 +712,13 @@ enum FileImagePreviewStore {
         cache.object(forKey: itemID as NSString)
     }
 
+    /// Previews are authenticated downloads, so the cache is session-scoped:
+    /// account and profile transitions flush it to keep one session from
+    /// rendering another session's files.
+    static func removeAllCachedImages() {
+        cache.removeAllObjects()
+    }
+
     static func loadFull(
         item: FileLibraryItem,
         repository: any FileLibraryRepository

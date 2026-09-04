@@ -152,41 +152,96 @@ final class AppDependencies {
         }
     }
 
+    /// Only identified corruption or an incompatible schema justifies
+    /// deleting the store: it holds unsent drafts, staged uploads, and
+    /// follow-up journals that cannot be regenerated from the server.
+    /// Transient failures (disk pressure, temporary I/O) must leave the
+    /// persistent files in place and fall back to the in-memory store.
+    static func isStoreCorruption(_ failure: NSError) -> Bool {
+        var current: NSError = failure
+        for _ in 0..<4 {
+            if current.domain == NSCocoaErrorDomain {
+                // NSFileReadCorruptFileError and
+                // NSPersistentStoreIncompatibleVersionSchemaError.
+                if current.code == 258 || current.code == 134_100 { return true }
+            }
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else {
+                // SQLite-level corruption reaches here through the chain.
+                if current.domain == "SQLite" || current.domain == "SQLiteErrorDomain",
+                   current.code == 11 /* SQLITE_CORRUPT */ || current.code == 26 /* SQLITE_NOTADB */ {
+                    return true
+                }
+                return false
+            }
+            current = underlying
+        }
+        return false
+    }
+
+    /// Private offline data — the conversation cache and staged attachment
+    /// bytes — must never ride device backups: an app-container export would
+    /// bypass the optional LocalAuthentication screen and expose messages
+    /// and files that file protection alone does not shield.
+    static func excludePrivateDataFromBackups(storeURL: URL) {
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        for path in [storeURL.path, storeURL.path + "-wal", storeURL.path + "-shm"] {
+            var fileURL = URL(fileURLWithPath: path)
+            try? fileURL.setResourceValues(resourceValues)
+        }
+        var uploads = URL.applicationSupportDirectory.appending(
+            path: "Uploads",
+            directoryHint: .isDirectory
+        )
+        try? FileManager.default.createDirectory(at: uploads, withIntermediateDirectories: true)
+        try? uploads.setResourceValues(resourceValues)
+    }
+
     static func live(
         persistentContainerFactory: ModelContainerFactory? = nil,
         storeURL: URL? = nil
     ) -> AppDependencies {
         let cacheStoreURL = storeURL ?? defaultCacheStoreURL
         do {
-            return try AppDependencies(
+            let dependencies = try AppDependencies(
                 storeURL: cacheStoreURL,
                 modelContainerFactory: persistentContainerFactory
             )
+            excludePrivateDataFromBackups(storeURL: cacheStoreURL)
+            return dependencies
         } catch {
             let failure = error as NSError
             let underlying = failure.userInfo[NSUnderlyingErrorKey] as? NSError
-            AppLog.persistence.fault(
-                "Persistent cache unavailable; discarding the store and rebuilding it. domain=\(failure.domain, privacy: .public) code=\(failure.code, privacy: .public) underlying-domain=\(underlying?.domain ?? "none", privacy: .public) underlying-code=\(underlying?.code ?? 0, privacy: .public)"
-            )
-            discardCacheStoreFiles(at: cacheStoreURL)
+            if isStoreCorruption(failure) {
+                AppLog.persistence.fault(
+                    "Persistent cache is corrupt; discarding the store and rebuilding it. domain=\(failure.domain, privacy: .public) code=\(failure.code, privacy: .public) underlying-domain=\(underlying?.domain ?? "none", privacy: .public) underlying-code=\(underlying?.code ?? 0, privacy: .public)"
+                )
+                discardCacheStoreFiles(at: cacheStoreURL)
+                do {
+                    let dependencies = try AppDependencies(
+                        storeURL: cacheStoreURL,
+                        modelContainerFactory: persistentContainerFactory
+                    )
+                    excludePrivateDataFromBackups(storeURL: cacheStoreURL)
+                    return dependencies
+                } catch {
+                    let retryFailure = error as NSError
+                    AppLog.persistence.fault(
+                        "Rebuilt cache store is still unavailable; using an in-memory recovery store. domain=\(retryFailure.domain, privacy: .public) code=\(retryFailure.code, privacy: .public)"
+                    )
+                }
+            } else {
+                AppLog.persistence.fault(
+                    "Persistent cache unavailable without store corruption; keeping the store on disk and using an in-memory recovery store. domain=\(failure.domain, privacy: .public) code=\(failure.code, privacy: .public) underlying-domain=\(underlying?.domain ?? "none", privacy: .public) underlying-code=\(underlying?.code ?? 0, privacy: .public)"
+                )
+            }
             do {
                 return try AppDependencies(
-                    storeURL: cacheStoreURL,
-                    modelContainerFactory: persistentContainerFactory
+                    inMemory: true,
+                    cacheHealth: .degraded(.persistentStoreUnavailable)
                 )
             } catch {
-                let retryFailure = error as NSError
-                AppLog.persistence.fault(
-                    "Rebuilt cache store is still unavailable; using an in-memory recovery store. domain=\(retryFailure.domain, privacy: .public) code=\(retryFailure.code, privacy: .public)"
-                )
-                do {
-                    return try AppDependencies(
-                        inMemory: true,
-                        cacheHealth: .degraded(.persistentStoreUnavailable)
-                    )
-                } catch {
-                    fatalError("Unable to create the LibreChat recovery model container.")
-                }
+                fatalError("Unable to create the LibreChat recovery model container.")
             }
         }
     }

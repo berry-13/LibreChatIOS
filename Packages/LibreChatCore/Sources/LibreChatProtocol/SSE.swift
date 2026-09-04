@@ -20,8 +20,19 @@ public struct SSEDecoder: Sendable {
 
     public init() {}
 
-    public mutating func append(_ data: Data) -> [ServerSentEvent] {
+    /// A single SSE frame may legitimately carry a large tool payload, but an
+    /// unterminated frame must not grow for the lifetime of the stream.
+    static let maximumFrameBytes = 1_048_576
+
+    public mutating func append(_ data: Data) throws -> [ServerSentEvent] {
         buffer.append(contentsOf: data)
+        guard buffer.count <= Self.maximumFrameBytes else {
+            buffer.removeAll()
+            scanIndex = 0
+            throw LibreChatProtocolError.unsupported(
+                "The server sent an event frame larger than \(Self.maximumFrameBytes) bytes."
+            )
+        }
         var events: [ServerSentEvent] = []
 
         while let delimiter = nextDelimiter() {
@@ -141,7 +152,7 @@ public actor URLSessionEventStreamTransport: EventStreamTransport {
                     var decoder = SSEDecoder()
                     for try await byte in bytes {
                         try Task.checkCancellation()
-                        for event in decoder.append(Data([byte])) {
+                        for event in try decoder.append(Data([byte])) {
                             continuation.yield(event)
                         }
                     }
