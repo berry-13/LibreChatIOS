@@ -1,0 +1,24 @@
+.DS_Store
+
+# ZCode workspace-local state
+.zcode/
+
+# Xcode user state
+*.xcuserstate
+*.xccheckout
+xcuserdata/
+
+# Local build output
+DerivedData/
+build/
+*.dSYM
+*.dSYM.zip
+*.ipa
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Upstream reference clone (danny-avila/LibreChat)
+reference/
