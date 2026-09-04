@@ -110,7 +110,6 @@ actor UploadManager: UploadRepository {
             mimeType: suppliedMimeType,
             configuration: configuration
         )
-        let dimensions = Self.imageDimensions(data: prepared.data, mimeType: prepared.mimeType)
 
         // Oversized images get one automatic compaction pass: the file is
         // re-encoded at progressively smaller scales/qualities until it fits
@@ -129,6 +128,10 @@ actor UploadManager: UploadRepository {
            ) {
             prepared = (data: compacted, mimeType: "image/jpeg")
         }
+        // Dimensions must be read from the final bytes: compaction re-encodes
+        // the image, and metadata sent with the upload has to match what the
+        // server actually stores.
+        let dimensions = Self.imageDimensions(data: prepared.data, mimeType: prepared.mimeType)
         try validate(
             byteCount: prepared.data.count,
             mimeType: prepared.mimeType,

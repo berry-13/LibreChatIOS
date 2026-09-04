@@ -610,13 +610,20 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
         body: Data
     ) async throws -> Data {
         let task = session.uploadTask(with: request, from: body)
-        // The continuation is registered before `resume` so a completion that
-        // races the suspension can never be dropped.
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
-            queue.async {
-                self.continuation = continuation
+        // A cancelled awaiting task must cancel the underlying upload task,
+        // otherwise the request runs to completion server-side and the
+        // completion handler resurrects a state the caller already tore down.
+        return try await withTaskCancellationHandler {
+            // The continuation is registered before `resume` so a completion that
+            // races the suspension can never be dropped.
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+                queue.async {
+                    self.continuation = continuation
+                }
+                task.resume()
             }
-            task.resume()
+        } onCancel: {
+            task.cancel()
         }
     }
 
@@ -724,11 +731,9 @@ public actor RESTClient {
                 body: body,
                 progress: progress
             )
-            if response.statusCode == 401, !refreshed, request.authorization == .bearer {
-                _ = try await authSession.refresh(ifRejected: nil)
-                refreshed = true
-                continue
-            }
+            // A 401 after the body was submitted is surfaced as-is: the
+            // request is non-idempotent and must never be replayed, because
+            // the first submission may already have committed server-side.
             try Self.validate(response)
             do {
                 return try decoder.decode(Response.self, from: response.data)

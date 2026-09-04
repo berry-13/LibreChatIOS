@@ -44,8 +44,13 @@ public struct LibreChatProjectDTO: Codable, Equatable, Sendable {
         )
     }
 
+    /// LibreChat serializes Mongo dates with `toISOString`, which always
+    /// carries fractional seconds (`2026-08-18T10:30:00.123Z`); the plain
+    /// form is kept as a fallback. Matches the DTO date parsing idiom.
     private static func date(_ value: String) -> Date? {
-        ISO8601DateFormatter().date(from: value)
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }
 

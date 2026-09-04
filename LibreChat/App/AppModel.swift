@@ -338,6 +338,10 @@ final class AppModel {
             return
         }
         await select(profile: profile, restoring: true)
+        // A cold launch can reach .signedIn without ever passing through
+        // applicationBecameInactive, so the device lock has to engage here
+        // or the restored session sits unlocked until the next backgrounding.
+        if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
     }
 
     #if DEBUG

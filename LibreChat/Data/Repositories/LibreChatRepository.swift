@@ -3000,7 +3000,9 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                     retryPolicy: .idempotent(maximumAttempts: 2)
                 )
             )
-            configuredLimit = configuration.avatarSizeLimit
+            // The raw config expresses size limits in MB (e.g. `2` for
+            // 2 MiB); convert to bytes exactly like the upload path does.
+            configuredLimit = configuration.mergedWithByteUnitsAndDefaults().avatarSizeLimit
         } catch {
             configuredLimit = nil
         }
