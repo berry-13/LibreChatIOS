@@ -148,7 +148,10 @@ public enum LibreChatProjectsAPI {
     public static func create(
         _ input: CreateChatProjectInput
     ) throws -> APIRequest<LibreChatProjectDTO> {
-        try APIRequest(method: .post, path: "api/projects", body: input)
+        // Creation is non-idempotent: an internal replay after a lost
+        // response would create a duplicate project even though the caller
+        // holds an outcome-unknown lock against user-driven retries.
+        try APIRequest(method: .post, path: "api/projects", body: input, retryPolicy: .never)
     }
 
     public static func project(

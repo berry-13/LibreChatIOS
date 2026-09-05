@@ -21,6 +21,9 @@ final class UserKeysModel {
     private let onUnauthorized: @MainActor () async -> Void
 
     private(set) var state: State = .idle
+    /// Confirmed mutations advance this so a provider-status refresh that
+    /// captured pre-mutation state can never overwrite the newer result.
+    private var refreshRevision = 0
     private(set) var catalog: UserKeyCatalog?
     private(set) var activeMutation: UserKeyEndpointID?
     private(set) var operationMessage: String?
@@ -47,8 +50,12 @@ final class UserKeysModel {
             return
         }
         if catalog == nil { state = .loading }
+        refreshRevision &+= 1
+        let revision = refreshRevision
         do {
-            catalog = try await repository.userKeyCatalog()
+            let fresh = try await repository.userKeyCatalog()
+            guard revision == refreshRevision else { return }
+            catalog = fresh
             operationMessage = nil
             state = .loaded
         } catch is CancellationError {
@@ -132,6 +139,8 @@ final class UserKeysModel {
     }
 
     private func refreshAfterConfirmedMutation() async {
+        // Supersedes any provider refresh that captured pre-mutation state.
+        refreshRevision &+= 1
         do {
             catalog = try await repository.userKeyCatalog()
             state = .loaded
@@ -168,7 +177,7 @@ struct UserKeysView: View {
         _model = State(initialValue: UserKeysModel(
             repository: repository,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 

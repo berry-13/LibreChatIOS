@@ -279,7 +279,8 @@ struct InAppOAuthSheet: View {
     private static func route(for provider: AuthenticationMethod) -> String {
         switch provider {
         case .openID: "openid"
-        case .email, .ldap, .saml: "openid"
+        case .email, .ldap: "openid"
+        case .saml: "saml"
         default: provider.rawValue.lowercased()
         }
     }

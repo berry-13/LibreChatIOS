@@ -223,7 +223,7 @@ struct SkillsManagementView: View {
         _model = State(initialValue: SkillsManagementModel(
             repository: repository,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 

@@ -1,5 +1,9 @@
+import CryptoKit
 import Foundation
 import LibreChatDomain
+import os
+
+private let authLog = Logger(subsystem: "LibreChatProtocol", category: "auth")
 
 public struct AuthorizationCredential: Equatable, Sendable {
     public let headerValue: String
@@ -109,6 +113,18 @@ public actor AuthSession {
     /// Restores from the durable access token when the server still accepts
     /// it. Deployments that never set a refresh cookie depend on this path.
     private func restorePersistedSessionIfStillValid() async -> AuthenticatedSession? {
+        if Self.isSignedOutTombstoned(for: sessionStorageKey) {
+            // A previous logout could not delete the persisted credential.
+            // Retry the removal; until it succeeds the durable tombstone
+            // keeps the account signed out across launches.
+            do {
+                try await secretStore.remove(sessionStorageKey)
+                Self.clearSignedOutTombstone(for: sessionStorageKey)
+            } catch {
+                authLog.notice("Persisted session removal still failing; staying signed out.")
+            }
+            return nil
+        }
         guard let data = try? await secretStore.data(for: sessionStorageKey),
               let session = try? JSONDecoder().decode(AuthenticatedSession.self, from: data),
               !session.accessToken.isEmpty else { return nil }
@@ -209,6 +225,7 @@ public actor AuthSession {
             observability.record(.authenticationRefreshCoalesced)
             do {
                 let session = try await refreshTask.value
+                try Self.ensureRefreshStaysWithinAccount(session, current: currentUser)
                 adoptRefreshedSession(session)
                 return session
             } catch {
@@ -228,12 +245,26 @@ public actor AuthSession {
         defer { refreshTask = nil }
         do {
             let session = try await task.value
+            try Self.ensureRefreshStaysWithinAccount(session, current: currentUser)
             adoptRefreshedSession(session)
             observability.record(.authenticationRefreshSucceeded)
             return session
         } catch {
             observability.record(.authenticationRefreshFailed)
             throw error
+        }
+    }
+
+    /// A refresh answering with a different account than the one currently
+    /// signed in is stale or foreign: replaying requests under that bearer
+    /// would persist another account's data. Only explicit login or account
+    /// replacement may change the user, never the cookie-refresh path.
+    private static func ensureRefreshStaysWithinAccount(
+        _ session: AuthenticatedSession,
+        current: UserAccount?
+    ) throws {
+        if let current, current.id != session.user.id {
+            throw LibreChatProtocolError.unauthorized
         }
     }
 
@@ -275,6 +306,8 @@ public actor AuthSession {
         accessToken = session.accessToken
         currentUser = session.user
         credentialRevision &+= 1
+        // A newly installed session supersedes any stale signed-out marker.
+        Self.clearSignedOutTombstone(for: sessionStorageKey)
         if let encoded = try? JSONEncoder().encode(session) {
             persistSession(encoded)
         }
@@ -313,13 +346,57 @@ public actor AuthSession {
             _ = await pending.value
             pendingPersistenceWrite = nil
         }
-        try? await secretStore.remove(sessionStorageKey)
+        do {
+            try await secretStore.remove(sessionStorageKey)
+        } catch {
+            // A failed removal must not silently leave a usable bearer on
+            // disk: retry once, then durably tombstone the session so
+            // restore cannot resurrect the account on later launches.
+            do {
+                try await secretStore.remove(sessionStorageKey)
+            } catch {
+                Self.writeSignedOutTombstone(for: sessionStorageKey)
+                authLog.error(
+                    "Persisted session removal failed; tombstoning the session: \(String(describing: error), privacy: .public)"
+                )
+                throw error
+            }
+        }
         observability.record(.authenticationCredentialRevisionChanged(
             reason: .cleared,
             revision: credentialRevision
         ))
         refreshTask = nil
         if clearCookies { try await transport.clearCookies() }
+    }
+
+    // MARK: - Signed-out tombstone
+
+    /// Durable record that a logout could not delete the persisted session
+    /// credential. Restore checks it before every launch so a surviving
+    /// bearer can never silently resurrect the signed-out account.
+    private static var signedOutDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "LibreChatSignedOut", directoryHint: .isDirectory)
+    }
+
+    private static func tombstoneURL(for key: String) -> URL {
+        let digest = SHA256.hash(data: Data(key.utf8))
+        let name = digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+        return signedOutDirectory.appending(path: name)
+    }
+
+    private static func writeSignedOutTombstone(for key: String) {
+        try? FileManager.default.createDirectory(at: signedOutDirectory, withIntermediateDirectories: true)
+        try? Data().write(to: tombstoneURL(for: key), options: .atomic)
+    }
+
+    private static func clearSignedOutTombstone(for key: String) {
+        try? FileManager.default.removeItem(at: tombstoneURL(for: key))
+    }
+
+    private static func isSignedOutTombstoned(for key: String) -> Bool {
+        FileManager.default.fileExists(atPath: tombstoneURL(for: key).path)
     }
 
     public func logout() async {

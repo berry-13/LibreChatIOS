@@ -18,6 +18,9 @@ actor UploadManager: UploadRepository {
     private let cache: CacheCoordinator
     private var uploadsByID: [UUID: PendingUpload] = [:]
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    /// Advanced on every resetAfterCachePurge; a stage() call that began
+    /// under a previous session must never enqueue against stale credentials.
+    private(set) var sessionEpoch = UUID()
     private var usageRenewalTask: Task<Void, Never>?
     private var immediateUsageRenewalTask: Task<Void, Never>?
     private var continuations: [UUID: AsyncStream<[PendingUpload]>.Continuation] = [:]
@@ -69,6 +72,7 @@ actor UploadManager: UploadRepository {
     /// are also drained before returning — after this call, no usage renewal
     /// can still dispatch under this manager's identity.
     func resetAfterCachePurge() async {
+        sessionEpoch = UUID()
         let outstanding = Array(tasks.values)
         tasks.removeAll()
         outstanding.forEach { $0.cancel() }
@@ -110,6 +114,7 @@ actor UploadManager: UploadRepository {
         target: ConversationTarget,
         isTemporary: Bool = false
     ) async throws -> PendingUpload {
+        let stageEpoch = sessionEpoch
         guard !data.isEmpty else {
             throw LibreChatProtocolError.unsupported("That file is empty.")
         }
@@ -124,6 +129,11 @@ actor UploadManager: UploadRepository {
         let sanitized = Self.sanitizedFilename(filename)
         let suppliedMimeType = Self.mimeType(for: sanitized, supplied: mimeType)
         let configuration = try await loadFileConfiguration()
+        // A profile switch while preparation was suspended invalidates this
+        // staging attempt: the retained runtime belongs to the old session.
+        guard stageEpoch == sessionEpoch else {
+            throw LibreChatProtocolError.unsupported("That attachment belonged to a previous session. Attach it again.")
+        }
         var prepared = try Self.preparedUploadData(
             data: data,
             mimeType: suppliedMimeType,

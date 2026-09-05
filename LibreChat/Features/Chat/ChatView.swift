@@ -37,6 +37,28 @@ struct ChatView: View {
     /// precise rejections, but nothing may materialize an unbounded file.
     static let maximumImportedFileBytes = 200 * 1_048_576
 
+    /// Reads the security-scoped file in bounded chunks, abandoning the
+    /// buffer as soon as the ceiling is exceeded.
+    private static func boundedFileData(at url: URL, limit: Int) throws -> Data {
+        struct ImportedFileTooLarge: LocalizedError {
+            let limit: Int
+            var errorDescription: String? {
+                "That file is too large to attach (over \(limit / 1_048_576) MB)."
+            }
+        }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var data = Data()
+        data.reserveCapacity(1_048_576)
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            data.append(chunk)
+            if data.count > limit {
+                throw ImportedFileTooLarge(limit: limit)
+            }
+        }
+        return data
+    }
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -752,15 +774,16 @@ struct ChatView: View {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 do {
                     let values = try url.resourceValues(forKeys: [.contentTypeKey, .nameKey, .fileSizeKey])
-                    // Security-scoped files are materialized whole below, so
-                    // an enormous import is rejected from its declared size
-                    // instead of ballooning memory before server validation.
+                    // Security-scoped files are materialized incrementally:
+                    // providers can omit fileSize or grow after the metadata
+                    // read, so nothing may buffer an unbounded file.
                     if let fileSize = values.fileSize, fileSize > Self.maximumImportedFileBytes {
                         model.errorMessage = "That file is too large to attach (over \(Self.maximumImportedFileBytes / 1_048_576) MB)."
                         return
                     }
+                    let data = try Self.boundedFileData(at: url, limit: Self.maximumImportedFileBytes)
                     try await model.attach(
-                        data: Data(contentsOf: url),
+                        data: data,
                         filename: values.name ?? url.lastPathComponent,
                         mimeType: values.contentType?.preferredMIMEType
                     )

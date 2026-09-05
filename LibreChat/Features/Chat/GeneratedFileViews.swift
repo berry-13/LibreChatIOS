@@ -138,6 +138,17 @@ actor GeneratedFilePreviewPollingCoordinator {
             }
         }
 
+        // A terminally failed poller must not leave the file "Preparing"
+        // forever: publishing the failed lifecycle exposes the sheet's
+        // manual refresh action for recovery.
+        func markTerminalFailure(_ failedFileID: String) {
+            guard var failed = latestFiles[failedFileID],
+                  failed.lifecycle == .pending else { return }
+            failed.lifecycle = .failed
+            latestFiles[failedFileID] = failed
+            Task { await onUpdate(failed) }
+        }
+
         while !Task.isCancelled,
               operationIDs[fileID] == operationID,
               let source = latestFiles[fileID],
@@ -159,11 +170,17 @@ actor GeneratedFilePreviewPollingCoordinator {
                     await onUnauthorized()
                     return
                 case .stop:
+                    // 404/malformed previews never recover on their own:
+                    // publishing a terminal failed lifecycle stops the
+                    // "Preparing" limbo and exposes the sheet's refresh.
                     suppressedFileIDs.insert(fileID)
+                    markTerminalFailure(fileID)
                     return
                 case .retry:
                     consecutiveFailures += 1
                     guard consecutiveFailures < configuration.maximumConsecutiveFailures else {
+                        // Transient transport flakiness keeps the
+                        // foreground-resume recovery path.
                         suppressedFileIDs.insert(fileID)
                         return
                     }
@@ -316,7 +333,7 @@ struct GeneratedFileCardView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Generated file (file.filename), (presentation.statusLabel), (presentation.typeLabel)")
+        .accessibilityLabel("Generated file \(file.filename), \(presentation.statusLabel), \(presentation.typeLabel)")
         .accessibilityHint("Opens generated file details")
         .accessibilityIdentifier("generated-file-\(file.identity.resourceID)")
     }
@@ -452,7 +469,7 @@ struct GeneratedFileSheetView: View {
                     .accessibilityLabel("Generated file preview")
                 if file.previewTruncated {
                     Label(
-                        "Preview shortened to (GeneratedFile.maximumPreviewCharacters.formatted()) characters. Download the file to inspect the complete content.",
+                        "Preview shortened to \(GeneratedFile.maximumPreviewCharacters.formatted()) characters. Download the file to inspect the complete content.",
                         systemImage: "text.badge.ellipsis"
                     )
                     .font(.caption)

@@ -314,6 +314,12 @@ public actor HTTPTransport {
     }
 
     private static func appendingEncodedPathComponent(_ component: String, to url: URL) throws -> URL {
+        // Dot-only segments survive the percent-encoding allowlist unchanged
+        // and normalize to parent routes on the server; identifiers are
+        // opaque data and may never act as traversal.
+        guard component != ".", component != ".." else {
+            throw LibreChatProtocolError.encoding("The request path component is not usable.")
+        }
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         guard let encoded = component.addingPercentEncoding(withAllowedCharacters: allowed) else {
@@ -332,12 +338,36 @@ public actor HTTPTransport {
         return result
     }
 
+    /// Largest REST response body that may be buffered in memory. Real API
+    /// payloads (DTOs, search pages) sit far below this; the cap only exists
+    /// so a hostile or misconfigured server cannot exhaust the process
+    /// before validation runs.
+    static let maximumBufferedResponseBytes = 64 * 1_048_576
+
+    /// Buffers the response body incrementally so oversized bodies are
+    /// rejected without ever materializing them, including when the server
+    /// omits `Content-Length`.
+    private func boundedData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        var data = Data()
+        data.reserveCapacity(256 * 1_024)
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > Self.maximumBufferedResponseBytes {
+                throw LibreChatProtocolError.unsupported(
+                    "The server response exceeded \(Self.maximumBufferedResponseBytes) bytes."
+                )
+            }
+        }
+        return (data, response)
+    }
+
     public func execute(_ request: URLRequest, attempt: Int = 1) async throws -> HTTPResponse {
         let route = ProtocolRoute.classify(path: request.url?.path ?? "")
         let method = HTTPMethod(rawValue: request.httpMethod ?? "") ?? .get
         observability.record(.transportStarted(route: route, method: method, attempt: attempt))
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await boundedData(for: request)
             guard let response = response as? HTTPURLResponse,
                   let finalURL = response.url else {
                 throw LibreChatProtocolError.invalidResponse

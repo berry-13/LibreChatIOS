@@ -68,6 +68,8 @@ final class ConversationListModel {
     /// in-flight listing request that captured older state can never install
     /// a stale page over the confirmed local edit.
     private var listingRevision = 0
+    /// Whole-list favorite replacements run strictly one at a time.
+    private var favoritesMutationChain: Task<[ChatFavorite], Error>?
     private(set) var targetCatalog: TargetCatalogSnapshot?
     private(set) var isLoadingTargets = false
     private(set) var targetError: String?
@@ -256,7 +258,16 @@ final class ConversationListModel {
             guard revision == listingRevision else { return }
             let refreshedIDs = Set(page.conversations.map(\.id))
             liveRefreshArrived = true
-            conversations = page.conversations + conversations.filter { !refreshedIDs.contains($0.id) }
+            if page.nextCursor == nil {
+                // The final page makes the server listing authoritative:
+                // conversations deleted or archived by another client must
+                // leave the list instead of being preserved by the merge.
+                let serverIDs = refreshedIDs
+                let localDrafts = conversations.filter { $0.id.isLocalDraft && !serverIDs.contains($0.id) }
+                conversations = page.conversations + localDrafts
+            } else {
+                conversations = page.conversations + conversations.filter { !refreshedIDs.contains($0.id) }
+            }
             nextCursor = page.nextCursor
             freshness = page.fetchedAt
             isShowingCache = false
@@ -703,8 +714,17 @@ final class ConversationListModel {
             updated.append(identity)
         }
         favorites = updated
+        // Whole-list replacements are serialized: two overlapping POSTs can
+        // apply out of order on the server and resurrect a removed chip.
+        let previousChain = favoritesMutationChain
+        let repository = self.repository
+        let replacement = Task<[ChatFavorite], Error> {
+            _ = try? await previousChain?.value
+            return try await repository.replaceChatFavorites(updated)
+        }
+        favoritesMutationChain = replacement
         do {
-            favorites = try await repository.replaceChatFavorites(updated)
+            favorites = try await replacement.value
         } catch is CancellationError {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
@@ -832,17 +852,25 @@ final class ArchivedConversationListModel {
         await reload()
     }
 
+    /// Mutations (unarchive, delete) advance this so an in-flight listing
+    /// that captured pre-mutation state can never resurrect a removed row.
+    private var listingRevision = 0
+
     func reload() async {
         guard operationID == nil else { return }
         if conversations.isEmpty { state = .loading }
         errorMessage = nil
+        listingRevision &+= 1
+        let revision = listingRevision
         do {
             let page = try await repository.archivedConversations(cursor: nil, limit: 25)
+            guard revision == listingRevision else { return }
             conversations = page.conversations
             nextCursor = page.nextCursor
             state = .loaded
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
+            guard revision == listingRevision else { return }
             state = conversations.isEmpty ? .failed(error.userFacingMessage) : .loaded
             errorMessage = conversations.isEmpty ? nil : error.userFacingMessage
         }
@@ -854,13 +882,16 @@ final class ArchivedConversationListModel {
               !isLoadingMore else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
+        let revision = listingRevision
         do {
             let page = try await repository.archivedConversations(cursor: nextCursor, limit: 25)
+            guard revision == listingRevision else { return }
             let existingIDs = Set(conversations.map(\.id))
             conversations.append(contentsOf: page.conversations.filter { !existingIDs.contains($0.id) })
             self.nextCursor = page.nextCursor
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
+            guard revision == listingRevision else { return }
             errorMessage = error.userFacingMessage
         }
     }
@@ -869,6 +900,7 @@ final class ArchivedConversationListModel {
         guard operationID == nil else { return nil }
         operationID = conversation.id
         defer { operationID = nil }
+        listingRevision &+= 1
         do {
             let restored = try await repository.archive(id: conversation.id, isArchived: false)
             conversations.removeAll { $0.id == conversation.id }
@@ -885,6 +917,7 @@ final class ArchivedConversationListModel {
         guard operationID == nil else { return }
         operationID = conversation.id
         defer { operationID = nil }
+        listingRevision &+= 1
         do {
             try await repository.delete(id: conversation.id)
             conversations.removeAll { $0.id == conversation.id }

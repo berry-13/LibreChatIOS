@@ -28,6 +28,9 @@ final class ProjectListModel {
 
     private var searchTask: Task<Void, Never>?
     private var requestRevision: UInt64 = 0
+    /// Whether the most recent reload actually installed server data; only
+    /// that counts as reconciliation for an uncertain create.
+    private var didInstallResponse = false
 
     private(set) var state: State = .idle
     private(set) var projects: [ChatProject] = []
@@ -77,9 +80,14 @@ final class ProjectListModel {
         searchTask?.cancel()
         requestRevision &+= 1
         let revision = requestRevision
+        didInstallResponse = false
         await loadFirstPage(revision: revision)
         // The confirmed listing resolves any earlier unknown create outcome.
-        if state == .loaded { isCreationOutcomeUnknown = false }
+        // Reloads reconcile the outcome of an uncertain create, but only a
+        // reload that actually installed server data counts as proof.
+        if state == .loaded, didInstallResponse {
+            isCreationOutcomeUnknown = false
+        }
     }
 
     /// Call from a SwiftUI `.onChange(of: searchQuery)` handler.
@@ -172,6 +180,8 @@ final class ProjectListModel {
             let project = try await repository.createProject(
                 CreateChatProjectInput(name: trimmedName, description: normalizedDescription(description))
             )
+            // The confirmed creation supersedes any listing captured before it.
+            requestRevision &+= 1
             if matchesSearch(project) {
                 projects.removeAll { $0.id == project.id }
                 projects.append(project)
@@ -213,9 +223,15 @@ final class ProjectListModel {
             return nil
         }
 
+        guard !updatingIDs.contains(id) else {
+            operationError = "An update for this project is already in progress."
+            return nil
+        }
         updatingIDs.insert(id)
         operationError = nil
         defer { updatingIDs.remove(id) }
+        // A confirmed mutation supersedes any listing captured before it.
+        requestRevision &+= 1
         do {
             let project = try await repository.updateProject(
                 id: id,
@@ -252,6 +268,7 @@ final class ProjectListModel {
         operationError = nil
         defer { deletingIDs.remove(id) }
         do {
+            requestRevision &+= 1
             _ = try await repository.deleteProject(id: id)
             projects.removeAll { $0.id == id }
             return true
@@ -311,6 +328,7 @@ final class ProjectListModel {
             nextCursor = page.nextCursor
             operationError = nil
             state = .loaded
+            didInstallResponse = true
         } catch {
             guard revision == requestRevision else { return }
             await handle(error)

@@ -10,7 +10,8 @@ struct FileLibraryView: View {
 
     init(appModel: AppModel, repository: any FileLibraryRepository) {
         let isOffline: @MainActor () -> Bool = { appModel.isOffline }
-        let onUnauthorized: @MainActor () async -> Void = { await appModel.expireSession() }
+        let originatingProfileID = appModel.selectedServer?.id
+        let onUnauthorized: @MainActor () async -> Void = { await appModel.expireSession(for: originatingProfileID) }
         self.repository = repository
         self.isOffline = isOffline
         self.onUnauthorized = onUnauthorized
@@ -740,17 +741,25 @@ enum FileImagePreviewStore {
     ) async -> UIImage? {
         let thumbKey = "thumb:\(item.id)" as NSString
         if let cached = cache.object(forKey: thumbKey) { return cached }
-        guard let full = try? await loadFull(item: item, repository: repository) else { return nil }
-        let scale = min(1, maxPixel / max(full.size.width, full.size.height))
-        let thumbnail: UIImage
-        if scale >= 1 {
-            thumbnail = full
-        } else {
-            let size = CGSize(width: full.size.width * scale, height: full.size.height * scale)
-            thumbnail = UIGraphicsImageRenderer(size: size).image { _ in
-                full.draw(in: CGRect(origin: .zero, size: size))
-            }
+        let downloaded = try? await repository.downloadFile(item)
+        guard let downloaded else { return nil }
+        defer { try? FileManager.default.removeItem(at: downloaded.localURL) }
+        // Downsample straight from the file with CGImageSource: decoding the
+        // full-resolution source first can exhaust memory on huge images
+        // while merely scrolling the list.
+        guard let source = CGImageSourceCreateWithURL(downloaded.localURL as CFURL, nil) else {
+            return nil
         }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxPixel),
+        ]
+        guard let cgThumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        let thumbnail = UIImage(cgImage: cgThumbnail)
         cache.setObject(thumbnail, forKey: thumbKey)
         return thumbnail
     }

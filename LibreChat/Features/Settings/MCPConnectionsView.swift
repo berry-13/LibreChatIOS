@@ -81,7 +81,7 @@ struct MCPConnectionsView: View {
         _model = State(initialValue: MCPConnectionsModel(
             repository: repository,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 
