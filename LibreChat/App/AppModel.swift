@@ -504,8 +504,18 @@ final class AppModel {
                 runtime: activeRuntime,
                 selectionEpoch: selectionEpoch
             )
-            try await accept(session: session, runtime: activeRuntime, replacingAccount: false)
+            try await accept(
+                session: session,
+                runtime: activeRuntime,
+                replacingAccount: false,
+                selectionEpoch: selectionEpoch
+            )
         case let .requiresTwoFactor(challenge):
+            try validateBrowserAuthenticationContext(
+                profileID: selectedServer?.id ?? activeRuntime.profile.id,
+                runtime: activeRuntime,
+                selectionEpoch: selectionEpoch
+            )
             authenticationState = .awaitingTwoFactor(challenge)
         }
     }
@@ -620,7 +630,12 @@ final class AppModel {
             runtime: activeRuntime,
             selectionEpoch: selectionEpoch
         )
-        try await accept(session: session, runtime: activeRuntime, replacingAccount: false)
+        try await accept(
+            session: session,
+            runtime: activeRuntime,
+            replacingAccount: false,
+            selectionEpoch: selectionEpoch
+        )
     }
 
     func requestPasswordReset(email: String) async throws -> PasswordResetRequestResult {
@@ -755,6 +770,10 @@ final class AppModel {
     }
 
     func chooseAnotherServer() async {
+        // This transition changes the shared selection; the epoch fence must
+        // advance so an in-flight sign-out for the removed profile cannot
+        // overwrite the fresh .needsServer state afterwards.
+        profileSelectionEpoch &+= 1
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await activeRuntime?.repository.detachActiveStreams()
@@ -820,6 +839,10 @@ final class AppModel {
 
     /// Called synchronously from the scene-phase callback so the lock screen
     /// replaces the signed-in content before iOS can snapshot the scene.
+    func discardUploadsForConversation(_ conversationID: ConversationID) async {
+        await uploadManager?.discardUploads(for: conversationID)
+    }
+
     func engageAppLockForInactiveScene() {
         if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
     }

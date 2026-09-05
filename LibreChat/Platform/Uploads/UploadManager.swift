@@ -220,6 +220,23 @@ actor UploadManager: UploadRepository {
         tasks[upload.id] = Task { await self.performUpload(id: upload.id) }
     }
 
+    /// Tears down every upload owned by a discarded draft canvas: cancels
+    /// in-flight work, deletes confirmed remote temp files, and removes the
+    /// local records and bytes, since no UI can reach them afterwards.
+    func discardUploads(for conversationID: ConversationID) async {
+        let ownedIDs = uploadsByID.values
+            .filter { $0.conversationID == conversationID }
+            .map(\.id)
+        for id in ownedIDs {
+            await cancel(id: id)
+            uploadsByID.removeValue(forKey: id)
+            try? await cache.removeUpload(id: id, profileID: profileID, accountID: accountID)
+        }
+        guard !ownedIDs.isEmpty else { return }
+        publish()
+        await scheduleUsageRenewal(immediate: false)
+    }
+
     func cancel(id: UUID) async {
         tasks[id]?.cancel()
         tasks[id] = nil

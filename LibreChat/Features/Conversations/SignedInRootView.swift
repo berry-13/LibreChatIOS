@@ -51,6 +51,9 @@ struct SignedInRootView: View {
                         conversationID: conversationID
                     ) ?? []
                     return !uploads.isEmpty
+                },
+                onDiscardUploads: { conversationID in
+                    await appModel.discardUploadsForConversation(conversationID)
                 }
             )
         )

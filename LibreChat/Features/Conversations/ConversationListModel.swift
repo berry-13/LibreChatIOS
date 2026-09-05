@@ -72,6 +72,9 @@ final class ConversationListModel {
     private var favoritesMutationChain: Task<[ChatFavorite], Error>?
     /// The last list the server confirmed; optimistic edits roll back to it.
     private var confirmedFavorites: [ChatFavorite] = []
+    /// Invoked when a draft canvas is discarded so its staged attachments
+    /// (and any confirmed remote temp files) are torn down with it.
+    var onDiscardUploads: (@MainActor (ConversationID) async -> Void)?
     private(set) var targetCatalog: TargetCatalogSnapshot?
     private(set) var isLoadingTargets = false
     private(set) var targetError: String?
@@ -174,7 +177,8 @@ final class ConversationListModel {
         isOffline: @escaping @MainActor () -> Bool,
         presetsEnabled: @escaping @MainActor () -> Bool = { false },
         onUnauthorized: @escaping @MainActor () async -> Void,
-        draftCanvasProbe: (@MainActor (ConversationID) async -> Bool)? = nil
+        draftCanvasProbe: (@MainActor (ConversationID) async -> Bool)? = nil,
+        onDiscardUploads: (@MainActor (ConversationID) async -> Void)? = nil
     ) {
         self.repository = repository
         self.presetRepository = presetRepository
@@ -183,6 +187,7 @@ final class ConversationListModel {
         self.presetsEnabled = presetsEnabled
         self.onUnauthorized = onUnauthorized
         self.draftCanvasProbe = draftCanvasProbe
+        self.onDiscardUploads = onDiscardUploads
     }
 
     /// Recomputes which unsent canvases carry local content and belong in
@@ -207,7 +212,8 @@ final class ConversationListModel {
     /// Discards an unsent draft canvas and clears its saved composer state.
     /// No server request: the conversation does not exist yet.
     func discardDraftCanvas(_ id: ConversationID) async {
-        unsentCanvases.removeValue(forKey: id)
+        unregisterUnsentCanvas(id)
+        await onDiscardUploads?(id)
         await repository.saveDraft("", conversationID: id)
         await refreshDraftCanvases()
     }
@@ -237,6 +243,7 @@ final class ConversationListModel {
 
     func loadIfNeeded() async {
         guard state == .idle else { return }
+        restoreUnsentCanvasManifests()
         // Cache and network read concurrently: the cached page renders as
         // soon as it lands while the server refresh is already in flight.
         liveRefreshArrived = false
@@ -313,7 +320,7 @@ final class ConversationListModel {
     }
 
     func delete(_ conversation: LibreChatDomain.Conversation) async {
-        unsentCanvases.removeValue(forKey: conversation.id)
+        unregisterUnsentCanvas(conversation.id)
         guard activeOperationID == nil else { return }
         guard !isOffline() || conversation.id.isLocalDraft else {
             paginationError = "Deleting conversations is unavailable offline."
@@ -669,7 +676,7 @@ final class ConversationListModel {
         id: ConversationID,
         with conversation: LibreChatDomain.Conversation
     ) {
-        unsentCanvases.removeValue(forKey: id)
+        unregisterUnsentCanvas(id)
         conversations.removeAll { $0.id == conversation.id && $0.id != id }
         if let index = conversations.firstIndex(where: { $0.id == id }) {
             conversations[index] = conversation
@@ -767,7 +774,24 @@ final class ConversationListModel {
 
     func registerUnsentCanvas(_ canvas: LibreChatDomain.Conversation) {
         unsentCanvases[canvas.id] = canvas
+        if canvas.id.isLocalDraft, !canvas.isTemporaryConversation {
+            UnsentCanvasManifestStore.save(canvas)
+        }
         Task { await refreshDraftCanvases() }
+    }
+
+    func unregisterUnsentCanvas(_ id: ConversationID) {
+        unsentCanvases.removeValue(forKey: id)
+        UnsentCanvasManifestStore.remove(id)
+    }
+
+    /// Restores persisted canvases at launch; refreshDraftCanvases later
+    /// surfaces only those whose saved draft text still exists in this
+    /// profile's scope.
+    private func restoreUnsentCanvasManifests() {
+        for canvas in UnsentCanvasManifestStore.restoreAll() where unsentCanvases[canvas.id] == nil {
+            unsentCanvases[canvas.id] = canvas
+        }
     }
 
     /// Surfaces a failed row-level operation (inline menu actions) on the
@@ -935,6 +959,50 @@ final class ArchivedConversationListModel {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
             errorMessage = error.userFacingMessage
+        }
+    }
+}
+
+
+/// Durable metadata for unsent draft canvases. The draft text lives in
+/// SwiftData, but the canvas (its local id, target, and project) previously
+/// existed only in memory, so a process termination between typing and the
+/// first send made the saved text permanently unreachable.
+enum UnsentCanvasManifestStore {
+    static var directory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "LibreChatUnsentCanvases", directoryHint: .isDirectory)
+    }
+
+    static func url(for id: ConversationID) -> URL {
+        let safe = String(id.rawValue.map {
+            $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_"
+        })
+        return directory.appending(path: safe + ".json")
+    }
+
+    static func save(_ canvas: LibreChatDomain.Conversation) {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(canvas)
+            try data.write(to: url(for: canvas.id), options: .atomic)
+        } catch {
+            AppLog.persistence.error("Unsent canvas metadata could not be persisted.")
+        }
+    }
+
+    static func remove(_ id: ConversationID) {
+        try? FileManager.default.removeItem(at: url(for: id))
+    }
+
+    static func restoreAll() -> [LibreChatDomain.Conversation] {
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return urls.compactMap { fileURL in
+            guard fileURL.pathExtension == "json" else { return nil }
+            return try? JSONDecoder().decode(LibreChatDomain.Conversation.self, from: Data(contentsOf: fileURL))
         }
     }
 }

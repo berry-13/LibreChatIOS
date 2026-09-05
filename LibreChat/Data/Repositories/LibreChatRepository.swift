@@ -1819,6 +1819,11 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             retryPolicy: .idempotent(maximumAttempts: 2)
         )
         var conversation = try await runtime.restClient.send(request).domainModel()
+        // Reconciliation paths treat this as authoritative truth for the
+        // requested conversation; a foreign payload must never pass.
+        guard conversation.id == id else {
+            throw LibreChatProtocolError.invalidResponse
+        }
         if var target = conversation.target,
            let spec = target.spec,
            let startupConfiguration,

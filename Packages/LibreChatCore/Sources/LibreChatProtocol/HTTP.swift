@@ -441,6 +441,11 @@ public actor HTTPTransport {
     /// The returned URL has a random name and contains no server/profile/file
     /// identifiers. Error bodies are interpreted later by `RESTClient` and the
     /// staging file is removed on every failed or retried attempt.
+    /// Largest body a file download may stage, covering entity images and
+    /// library files: a hostile server must not be able to fill temporary
+    /// storage with an unbounded response.
+    static let maximumStagedDownloadBytes = 64 * 1_048_576
+
     public func executeDownload(
         _ request: URLRequest,
         attempt: Int = 1
@@ -453,6 +458,12 @@ public actor HTTPTransport {
             guard let response = response as? HTTPURLResponse,
                   let finalURL = response.url else {
                 throw LibreChatProtocolError.invalidResponse
+            }
+            if response.expectedContentLength > Self.maximumStagedDownloadBytes {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                throw LibreChatProtocolError.unsupported(
+                    "That download exceeds the \(Self.maximumStagedDownloadBytes) byte limit."
+                )
             }
             let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
                 result[String(describing: pair.key)] = String(describing: pair.value)
@@ -472,6 +483,17 @@ public actor HTTPTransport {
             } catch {
                 try? FileManager.default.removeItem(at: stagedURL)
                 throw error
+            }
+            // Declared lengths can lie (chunked bodies report -1); the staged
+            // file size is the authoritative bound.
+            let stagedBytes = ((try? FileManager.default.attributesOfItem(
+                atPath: stagedURL.path
+            ))?[.size] as? NSNumber)?.int64Value ?? 0
+            if stagedBytes > Self.maximumStagedDownloadBytes {
+                try? FileManager.default.removeItem(at: stagedURL)
+                throw LibreChatProtocolError.unsupported(
+                    "That download exceeds the \(Self.maximumStagedDownloadBytes) byte limit."
+                )
             }
 
             observability.record(.transportResponded(

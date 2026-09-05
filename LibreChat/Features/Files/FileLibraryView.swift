@@ -727,9 +727,21 @@ enum FileImagePreviewStore {
         if let cached = cache.object(forKey: item.id as NSString) { return cached }
         let downloaded = try await repository.downloadFile(item)
         defer { try? FileManager.default.removeItem(at: downloaded.localURL) }
-        guard let image = UIImage(contentsOfFile: downloaded.localURL.path) else {
+        // Highly compressed sources can decompress to hundreds of megabytes
+        // at full resolution; cap the preview decode by pixel size.
+        guard let source = CGImageSourceCreateWithURL(downloaded.localURL as CFURL, nil) else {
             throw LibrayImagePreviewError.unrenderable
         }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: 4096,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw LibrayImagePreviewError.unrenderable
+        }
+        let image = UIImage(cgImage: cgImage)
         cache.setObject(image, forKey: item.id as NSString)
         return image
     }

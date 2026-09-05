@@ -893,7 +893,7 @@ public struct LibreChatMessageDTO: Codable, Equatable, Sendable {
     /// carries fractional seconds; the plain form is the fallback.
     static func messageDate(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withFractionalSeconds]
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
