@@ -106,7 +106,9 @@ actor FileTransferManager {
         }
         try Task.checkCancellation()
         let values = try response.localURL.resourceValues(forKeys: [.fileSizeKey])
-        guard let fileSize = values.fileSize, fileSize > 0 else {
+        // A missing size means the file cannot be verified; a present
+        // zero-byte size is a legitimate empty artifact.
+        guard let fileSize = values.fileSize else {
             throw FileLibraryError.invalidDownload
         }
 
@@ -172,7 +174,18 @@ actor FileTransferManager {
         guard !candidate.isEmpty, candidate != ".", candidate != ".." else {
             return "Downloaded file"
         }
-        return String(candidate.prefix(160))
+        // APFS NAME_MAX is 255 bytes and the UUID prefix consumes 37; an
+        // emoji-heavy name capped by character count can still overflow the
+        // byte budget, so truncate by encoded length instead.
+        var byteCount = 0
+        var bounded = Substring()
+        for character in candidate {
+            let length = String(character).utf8.count
+            if byteCount + length > 180 { break }
+            byteCount += length
+            bounded.append(character)
+        }
+        return String(bounded)
     }
 }
 

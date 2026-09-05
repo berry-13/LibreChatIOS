@@ -70,6 +70,8 @@ final class ConversationListModel {
     private var listingRevision = 0
     /// Whole-list favorite replacements run strictly one at a time.
     private var favoritesMutationChain: Task<[ChatFavorite], Error>?
+    /// The last list the server confirmed; optimistic edits roll back to it.
+    private var confirmedFavorites: [ChatFavorite] = []
     private(set) var targetCatalog: TargetCatalogSnapshot?
     private(set) var isLoadingTargets = false
     private(set) var targetError: String?
@@ -688,11 +690,14 @@ final class ConversationListModel {
     private func loadFavorites() async {
         guard !isOffline() else { return }
         do {
-            favorites = try await repository.chatFavorites()
+            let loaded = try await repository.chatFavorites()
+            favorites = loaded
+            confirmedFavorites = loaded
         } catch is CancellationError {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
             favorites = []
+            confirmedFavorites = []
         }
     }
 
@@ -700,7 +705,9 @@ final class ConversationListModel {
     /// list once; failures roll the optimistic change back.
     func toggleFavorite(_ option: ChatTargetOption) async {
         guard let identity = favoriteIdentity(of: option) else { return }
-        let previous = favorites
+        // Queued mutations are always based on the last confirmed list, so a
+        // chain failure rolls every optimistic edit back coherently.
+        let previous = confirmedFavorites.isEmpty ? favorites : confirmedFavorites
         var updated = previous
         if let index = updated.firstIndex(of: identity) {
             updated.remove(at: index)
@@ -724,11 +731,14 @@ final class ConversationListModel {
         }
         favoritesMutationChain = replacement
         do {
-            favorites = try await replacement.value
+            let confirmed = try await replacement.value
+            confirmedFavorites = confirmed
+            favorites = confirmed
         } catch is CancellationError {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
             favorites = previous
+            confirmedFavorites = previous
             reportOperationError(error.userFacingMessage)
         }
     }

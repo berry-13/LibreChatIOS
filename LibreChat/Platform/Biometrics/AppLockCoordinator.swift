@@ -10,6 +10,15 @@ final class AppLockCoordinator {
         set { UserDefaults.standard.set(newValue, forKey: Self.enabledKey) }
     }
 
+    /// Whether the device can currently evaluate the authentication policy.
+    /// Without a passcode (and without an available biometric fallback) an
+    /// enabled lock can never be satisfied.
+    func canUnlock() async -> Bool {
+        let context = LAContext()
+        var error: NSError?
+        return context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
+    }
+
     func unlock() async throws -> Bool {
         let context = LAContext()
         context.localizedCancelTitle = "Cancel"

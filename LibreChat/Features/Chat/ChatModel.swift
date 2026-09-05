@@ -1467,7 +1467,7 @@ final class ChatModel {
         await refreshFollowUpState()
         if messages.count >= 500 || cacheMs > 250 || reloadMs > 250 {
             AppLog.perf.debug(
-                "chat-hydration conversation=\(self.conversation.id.rawValue, privacy: .public) cacheMs=\(Int(cacheMs)) reloadMs=\(Int(reloadMs)) messages=\(self.messages.count)"
+                "chat-hydration conversation=\(self.conversation.id.rawValue, privacy: .private) cacheMs=\(Int(cacheMs)) reloadMs=\(Int(reloadMs)) messages=\(self.messages.count)"
             )
         }
     }

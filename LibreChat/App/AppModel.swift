@@ -492,12 +492,18 @@ final class AppModel {
 
     func signIn(email: String, password: String) async throws {
         guard let activeRuntime else { throw LibreChatProtocolError.unsupported("Choose a server first.") }
+        let selectionEpoch = profileSelectionEpoch
         isWorking = true
         notice = nil
         defer { isWorking = false }
 
         switch try await activeRuntime.protocolRuntime.authSession.login(email: email, password: password) {
         case let .authenticated(session):
+            try validateBrowserAuthenticationContext(
+                profileID: selectedServer?.id ?? activeRuntime.profile.id,
+                runtime: activeRuntime,
+                selectionEpoch: selectionEpoch
+            )
             try await accept(session: session, runtime: activeRuntime, replacingAccount: false)
         case let .requiresTwoFactor(challenge):
             authenticationState = .awaitingTwoFactor(challenge)
@@ -594,18 +600,25 @@ final class AppModel {
         }
     }
 
-    func verifyTwoFactor(code: String) async throws {
+    func verifyTwoFactor(code: String, backupCode: Bool = false) async throws {
         guard let activeRuntime,
               case let .awaitingTwoFactor(challenge) = authenticationState else {
             throw LibreChatProtocolError.invalidResponse
         }
+        let selectionEpoch = profileSelectionEpoch
         isWorking = true
         notice = nil
         defer { isWorking = false }
 
         let session = try await activeRuntime.protocolRuntime.authSession.verifyTwoFactor(
             temporaryToken: challenge.temporaryToken,
-            code: code
+            code: backupCode ? "" : code,
+            backupCode: backupCode ? code : nil
+        )
+        try validateBrowserAuthenticationContext(
+            profileID: selectedServer?.id ?? activeRuntime.profile.id,
+            runtime: activeRuntime,
+            selectionEpoch: selectionEpoch
         )
         try await accept(session: session, runtime: activeRuntime, replacingAccount: false)
     }
@@ -640,10 +653,14 @@ final class AppModel {
     }
 
     func acceptPendingTerms() async throws {
-        guard pendingTerms != nil, let repository = activeRuntime?.repository else {
+        guard pendingTerms != nil, let termsRuntime = activeRuntime else {
             throw LibreChatProtocolError.invalidResponse
         }
-        _ = try await repository.acceptTerms()
+        let selectionEpoch = profileSelectionEpoch
+        _ = try await termsRuntime.repository.acceptTerms()
+        // Another scene may have switched to an account whose own terms flow
+        // is pending; only the originating profile's acceptance clears it.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         pendingTerms = nil
     }
 
@@ -685,17 +702,21 @@ final class AppModel {
     }
 
     func signOut() async {
-        guard let selectedServer else { return }
+        guard let selectedServer, let signingOutRuntime = activeRuntime else { return }
+        let selectionEpoch = profileSelectionEpoch
         ServerEntityImageStore.removeAllCachedImages()
         FileImagePreviewStore.removeAllCachedImages()
         isWorking = true
         cancelGenerationRecovery()
         generationRecoverySignal = nil
-        await activeRuntime?.repository.detachActiveStreams()
-        await activeRuntime?.protocolRuntime.authSession.logout()
+        await signingOutRuntime.repository.detachActiveStreams()
+        await signingOutRuntime.protocolRuntime.authSession.logout()
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
         }
+        // Another scene switching servers mid-logout must not tear down the
+        // newly selected session's state.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         authenticationState = .signedOut(selectedServer.id)
         await uploadManager?.resetAfterCachePurge()
         uploadManager = nil
@@ -818,6 +839,10 @@ final class AppModel {
 
     func applicationBecameActive() async {
         isApplicationActive = true
+        // SQLite can recreate -wal/-shm sidecars after the one-shot
+        // exclusion; re-apply it on every activation so replacements never
+        // stay backup-eligible.
+        AppDependencies.excludePrivateDataFromBackups(storeURL: AppDependencies.defaultCacheStoreURL)
         guard phase == .signedIn, !isOffline, let repository = activeRuntime?.repository else { return }
         await uploadManager?.applicationBecameActive()
         AppLog.generation.info("Application became active; starting generation reconciliation.")
@@ -829,7 +854,20 @@ final class AppModel {
         )
     }
 
-    func setAppLockEnabled(_ enabled: Bool) {
+    func setAppLockEnabled(_ enabled: Bool) async {
+        // Enabling without a usable device-authentication policy would brick
+        // the app behind an unlock that can never succeed.
+        if enabled {
+            do {
+                if try await appLock.canUnlock() == false {
+                    notice = "Set up a passcode or biometrics before enabling the app lock."
+                    return
+                }
+            } catch {
+                notice = "Set up a passcode or biometrics before enabling the app lock."
+                return
+            }
+        }
         appLock.isEnabled = enabled
         if !enabled { isAppLocked = false }
     }

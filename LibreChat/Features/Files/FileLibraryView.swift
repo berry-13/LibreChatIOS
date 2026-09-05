@@ -110,7 +110,7 @@ struct FileLibraryView: View {
         if let omittedCount = model.snapshot?.omittedCount, omittedCount > 0 {
             Section {
                 Label(
-                    "(omittedCount) server file \(omittedCount == 1 ? "record was" : "records were") hidden because its identity or metadata was invalid.",
+                    "\(omittedCount) server file \(omittedCount == 1 ? "record was" : "records were") hidden because its identity or metadata was invalid.",
                     systemImage: "exclamationmark.shield"
                 )
                 .font(.callout)
