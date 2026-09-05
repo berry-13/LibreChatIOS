@@ -61,6 +61,9 @@ public struct AgentID: LibreChatIdentifier {
 
     public var isSafePathComponent: Bool {
         guard (1...128).contains(rawValue.utf8.count) else { return false }
+        // Dot-only values survive the allowlist but normalize to parent
+        // routes once interpolated into a path.
+        guard rawValue != ".", rawValue != ".." else { return false }
         return rawValue.unicodeScalars.allSatisfy { scalar in
             switch scalar.value {
             case 48...57, 65...90, 97...122: true

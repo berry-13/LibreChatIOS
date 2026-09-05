@@ -49,7 +49,9 @@ public struct LibreChatProjectDTO: Codable, Equatable, Sendable {
     /// form is kept as a fallback. Matches the DTO date parsing idiom.
     private static func date(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withFractionalSeconds]
+        // Assigning only .withFractionalSeconds would REPLACE the default
+        // .withInternetDateTime components and misparse normal timestamps.
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }

@@ -37,6 +37,35 @@ struct ChatView: View {
     /// precise rejections, but nothing may materialize an unbounded file.
     static let maximumImportedFileBytes = 200 * 1_048_576
 
+    /// Decodes a photo asset through a pixel-limited CGImageSource so huge
+    /// ProRAW/panorama sources never allocate their full decompressed size.
+    private static func boundedDownsampledImageData(
+        at url: URL,
+        limit: Int,
+        maxPixel: Int
+    ) throws -> Data {
+        struct PhotoTooLarge: LocalizedError {
+            let limit: Int
+            var errorDescription: String? {
+                "That photo is too large to attach (over \(limit / 1_048_576) MB)."
+            }
+        }
+        let data = try boundedFileData(at: url, limit: limit)
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            throw CameraCaptureFailure.encodingFailed
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.92) else {
+            throw CameraCaptureFailure.encodingFailed
+        }
+        return jpeg
+    }
+
     /// Reads the security-scoped file in bounded chunks, abandoning the
     /// buffer as soon as the ceiling is exceeded.
     private static func boundedFileData(at url: URL, limit: Int) throws -> Data {
@@ -794,7 +823,16 @@ struct ChatView: View {
             guard let item else { return }
             Task {
                 do {
-                    guard let data = try await item.loadTransferable(type: Data.self) else { return }
+                    // Provider-backed assets can be enormous: load the
+                    // file-backed copy, bound its bytes, and decode through
+                    // a pixel-limited CGImageSource instead of
+                    // materializing the complete asset as raw data.
+                    guard let fileURL = try await item.loadTransferable(type: URL.self) else { return }
+                    let data = try Self.boundedDownsampledImageData(
+                        at: fileURL,
+                        limit: Self.maximumImportedFileBytes,
+                        maxPixel: 4096
+                    )
                     guard let image = UIImage(data: data) else {
                         throw CameraCaptureFailure.encodingFailed
                     }
