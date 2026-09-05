@@ -879,7 +879,19 @@ actor UploadManager: UploadRepository {
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\"", with: "'")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "Attachment" : String(cleaned.prefix(255))
+        guard !cleaned.isEmpty else { return "Attachment" }
+        // The staged destination is "UUID-filename" (37-byte prefix) and
+        // APFS NAME_MAX is 255 bytes, so truncate by encoded byte length —
+        // a grapheme cap lets multibyte names overflow the limit.
+        var byteCount = 0
+        var bounded = Substring()
+        for character in cleaned {
+            let length = String(character).utf8.count
+            if byteCount + length > 180 { break }
+            byteCount += length
+            bounded.append(character)
+        }
+        return String(bounded)
     }
 
     private static func mimeType(for filename: String, supplied: String?) -> String {

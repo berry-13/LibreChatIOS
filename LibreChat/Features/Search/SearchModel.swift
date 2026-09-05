@@ -140,6 +140,11 @@ final class SearchModel {
             self.nextConversationCursor = page.nextCursor
             paginationError = nil
         } catch {
+            // A superseded request's failure belongs to the result set the
+            // user already replaced — never to the newer one.
+            guard expectedGeneration == requestGeneration,
+                  expectedQuery == normalizedQuery,
+                  scope == .conversations else { return }
             if error.isUnauthorized { await onUnauthorized() }
             guard !(error is CancellationError) else { return }
             paginationError = error.userFacingMessage

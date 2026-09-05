@@ -686,6 +686,7 @@ final class AppModel {
 
     func confirmAccountReplacement() async {
         guard let session = pendingAccountReplacement, let activeRuntime, let selectedServer else { return }
+        let selectionEpoch = profileSelectionEpoch
         ServerEntityImageStore.removeAllCachedImages()
         FileImagePreviewStore.removeAllCachedImages()
         isWorking = true
@@ -694,7 +695,12 @@ final class AppModel {
             try? await dependencies.cache.purge(profileID: selectedServer.id, accountID: oldAccount)
         }
         do {
-            try await accept(session: session, runtime: activeRuntime, replacingAccount: true)
+            try await accept(
+                session: session,
+                runtime: activeRuntime,
+                replacingAccount: true,
+                selectionEpoch: selectionEpoch
+            )
         } catch {
             notice = error.userFacingMessage
         }
@@ -739,6 +745,9 @@ final class AppModel {
         }
         authenticationState = .signedOut(selectedServer.id)
         await uploadManager?.resetAfterCachePurge()
+        // The reset drains cancelled tasks and suspends; revalidate before
+        // mutating the shared selection state.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         uploadManager = nil
         pendingAccountReplacement = nil
         pendingTerms = nil
@@ -773,6 +782,8 @@ final class AppModel {
         guard selectionEpoch == profileSelectionEpoch else { return }
         authenticationState = .signedOut(selectedServer.id)
         await expiringUploadManager?.resetAfterCachePurge()
+        // Same post-drain revalidation as signOut.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         uploadManager = nil
         pendingTerms = nil
         notice = "Your session expired. Sign in to continue."
@@ -1080,6 +1091,9 @@ final class AppModel {
         // manager must be torn down — but never the new profile's.
         guard selectionEpoch == profileSelectionEpoch else { return }
         await uploadManager?.resetAfterCachePurge()
+        // The reset drains cancelled upload tasks and suspends; revalidate
+        // before the global mutations.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         uploadManager = nil
         profile.accountIdentifier = nil
         if let capabilities = profile.capabilities {

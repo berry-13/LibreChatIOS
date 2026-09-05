@@ -1586,7 +1586,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
     }
 
     func project(id: ProjectID) async throws -> ChatProject {
-        try await runtime.restClient.send(try LibreChatProjectsAPI.project(id: id)).domainModel()
+        let project = try await runtime.restClient.send(try LibreChatProjectsAPI.project(id: id)).domainModel()
+        // Detail-screen rename/delete act on model.project.id; a stale or
+        // foreign payload must never become the authoritative project.
+        guard project.id == id else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        return project
     }
 
     func createProject(_ input: CreateChatProjectInput) async throws -> ChatProject {
