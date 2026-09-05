@@ -344,6 +344,56 @@ public actor HTTPTransport {
     /// before validation runs.
     static let maximumBufferedResponseBytes = 64 * 1_048_576
 
+    /// Streams the response body to a staged file, enforcing the byte cap
+    /// while bytes arrive — `URLSession.download(for:)` would only surface
+    /// an oversized body after it had already been written in full.
+    private func boundedDownload(
+        request: URLRequest
+    ) async throws -> (URL, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        let stagingDirectory = FileManager.default.temporaryDirectory
+            .appending(path: "LibreChatHTTPDownloads", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: stagingDirectory,
+            withIntermediateDirectories: true
+        )
+        let stagedURL = stagingDirectory.appending(path: UUID().uuidString)
+        try Data().write(to: stagedURL)
+        let fileHandle = try FileHandle(forWritingTo: stagedURL)
+        do {
+            var buffered = Data()
+            buffered.reserveCapacity(256 * 1_024)
+            var written = 0
+            for try await byte in bytes {
+                buffered.append(byte)
+                written += 1
+                if buffered.count >= 256 * 1_024 {
+                    try fileHandle.write(contentsOf: buffered)
+                    buffered.removeAll(keepingCapacity: true)
+                }
+                if written > Self.maximumStagedDownloadBytes {
+                    try? fileHandle.close()
+                    try? FileManager.default.removeItem(at: stagedURL)
+                    throw LibreChatProtocolError.unsupported(
+                        "That download exceeds the \(Self.maximumStagedDownloadBytes) byte limit."
+                    )
+                }
+            }
+            if !buffered.isEmpty {
+                try fileHandle.write(contentsOf: buffered)
+            }
+            try fileHandle.close()
+        } catch {
+            try? fileHandle.close()
+            try? FileManager.default.removeItem(at: stagedURL)
+            throw error
+        }
+        return (stagedURL, http)
+    }
+
     /// Buffers the response body incrementally so oversized bodies are
     /// rejected without ever materializing them, including when the server
     /// omits `Content-Length`.
@@ -454,47 +504,15 @@ public actor HTTPTransport {
         let method = HTTPMethod(rawValue: request.httpMethod ?? "") ?? .get
         observability.record(.transportStarted(route: route, method: method, attempt: attempt))
         do {
-            let (temporaryURL, response) = try await session.download(for: request)
+            let (stagedURL, response) = try await boundedDownload(request: request)
             guard let response = response as? HTTPURLResponse,
                   let finalURL = response.url else {
                 throw LibreChatProtocolError.invalidResponse
-            }
-            if response.expectedContentLength > Self.maximumStagedDownloadBytes {
-                try? FileManager.default.removeItem(at: temporaryURL)
-                throw LibreChatProtocolError.unsupported(
-                    "That download exceeds the \(Self.maximumStagedDownloadBytes) byte limit."
-                )
             }
             let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, pair in
                 result[String(describing: pair.key)] = String(describing: pair.value)
             }
             await cookieJar.absorb(responseHeaders: headers, for: finalURL)
-
-            let stagingDirectory = FileManager.default.temporaryDirectory
-                .appending(path: "LibreChatHTTPDownloads", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(
-                at: stagingDirectory,
-                withIntermediateDirectories: true
-            )
-            let stagedURL = stagingDirectory.appending(path: UUID().uuidString)
-            do {
-                try FileManager.default.moveItem(at: temporaryURL, to: stagedURL)
-                try Task.checkCancellation()
-            } catch {
-                try? FileManager.default.removeItem(at: stagedURL)
-                throw error
-            }
-            // Declared lengths can lie (chunked bodies report -1); the staged
-            // file size is the authoritative bound.
-            let stagedBytes = ((try? FileManager.default.attributesOfItem(
-                atPath: stagedURL.path
-            ))?[.size] as? NSNumber)?.int64Value ?? 0
-            if stagedBytes > Self.maximumStagedDownloadBytes {
-                try? FileManager.default.removeItem(at: stagedURL)
-                throw LibreChatProtocolError.unsupported(
-                    "That download exceeds the \(Self.maximumStagedDownloadBytes) byte limit."
-                )
-            }
 
             observability.record(.transportResponded(
                 route: route,
@@ -572,6 +590,52 @@ public actor HTTPTransport {
         let method = HTTPMethod(rawValue: request.httpMethod ?? "") ?? .post
         observability.record(.transportStarted(route: route, method: method, attempt: attempt))
         let delegate = UploadTaskDelegate(progress: progress)
+        return try await executeUploadWithDelegate(
+            delegate,
+            request: request,
+            route: route,
+            method: method,
+            attempt: attempt,
+            progress: progress,
+            body: body,
+            bodyFileURL: nil
+        )
+    }
+
+    /// Streams the upload body from disk; near-ceiling attachments never
+    /// materialize the multipart request in memory.
+    public func executeUpload(
+        _ request: URLRequest,
+        bodyFileURL: URL,
+        attempt: Int = 1,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> HTTPResponse {
+        let route = ProtocolRoute.classify(path: request.url?.path ?? "")
+        let method = HTTPMethod(rawValue: request.httpMethod ?? "") ?? .post
+        observability.record(.transportStarted(route: route, method: method, attempt: attempt))
+        let delegate = UploadTaskDelegate(progress: progress)
+        return try await executeUploadWithDelegate(
+            delegate,
+            request: request,
+            route: route,
+            method: method,
+            attempt: attempt,
+            progress: progress,
+            body: nil,
+            bodyFileURL: bodyFileURL
+        )
+    }
+
+    private func executeUploadWithDelegate(
+        _ delegate: UploadTaskDelegate,
+        request: URLRequest,
+        route: ProtocolRoute,
+        method: HTTPMethod,
+        attempt: Int,
+        progress: @escaping @Sendable (Double) -> Void,
+        body: Data?,
+        bodyFileURL: URL?
+    ) async throws -> HTTPResponse {
         // A delegate-bearing session is required for `didSendBodyData`. It is
         // cloned from the transport's own configuration — same stubbed
         // URLProtocols, cookies policy, and User-Agent — and created per
@@ -583,11 +647,22 @@ public actor HTTPTransport {
         )
         defer { session.finishTasksAndInvalidate() }
         do {
-            let data = try await delegate.upload(
-                session: session,
-                request: request,
-                body: body
-            )
+            let data: Data
+            if let bodyFileURL {
+                data = try await delegate.upload(
+                    session: session,
+                    request: request,
+                    bodyFileURL: bodyFileURL
+                )
+            } else if let body {
+                data = try await delegate.upload(
+                    session: session,
+                    request: request,
+                    body: body
+                )
+            } else {
+                throw LibreChatProtocolError.encoding("An upload requires a request body.")
+            }
             guard let response = delegate.response as? HTTPURLResponse,
                   let finalURL = response.url else {
                 throw LibreChatProtocolError.invalidResponse
@@ -663,6 +738,21 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
         body: Data
     ) async throws -> Data {
         let task = session.uploadTask(with: request, from: body)
+        return try await awaitUpload(task)
+    }
+
+    /// Streams the multipart body from a staged file so large uploads never
+    /// materialize the request body in memory.
+    func upload(
+        session: URLSession,
+        request: URLRequest,
+        bodyFileURL: URL
+    ) async throws -> Data {
+        let task = session.uploadTask(with: request, fromFile: bodyFileURL)
+        return try await awaitUpload(task)
+    }
+
+    private func awaitUpload(_ task: URLSessionUploadTask) async throws -> Data {
         // A cancelled awaiting task must cancel the underlying upload task,
         // otherwise the request runs to completion server-side and the
         // completion handler resurrects a state the caller already tore down.
@@ -797,6 +887,52 @@ public actor RESTClient {
             // A 401 after the body was submitted is surfaced as-is: the
             // request is non-idempotent and must never be replayed, because
             // the first submission may already have committed server-side.
+            try Self.validate(response)
+            do {
+                return try decoder.decode(Response.self, from: response.data)
+            } catch {
+                throw LibreChatProtocolError.decoding(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Streams a file-backed multipart upload with the same single-attempt,
+    /// pre-dispatch-credential semantics as `sendUpload`.
+    public func sendUploadFile<Response>(
+        _ request: APIRequest<Response>,
+        bodyFileURL: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> Response {
+        precondition(request.retryPolicy == .never, "Uploads are single-attempt requests.")
+        let route = ProtocolRoute.classify(path: request.path)
+        observability.record(.transportStarted(route: route, method: request.method, attempt: 1))
+        var refreshed = false
+        while true {
+            var urlRequest = try await transport.request(
+                method: request.method,
+                path: request.path,
+                pathComponents: request.pathComponents,
+                queryItems: request.queryItems,
+                headers: request.headers,
+                body: nil
+            )
+            if request.authorization == .bearer {
+                do {
+                    let credential = try await authSession.authorizationCredential()
+                    urlRequest.setValue(credential.headerValue, forHTTPHeaderField: "Authorization")
+                } catch LibreChatProtocolError.unauthorized where !refreshed {
+                    _ = try await authSession.refresh(ifRejected: nil)
+                    refreshed = true
+                    continue
+                }
+            }
+            let response = try await transport.executeUpload(
+                urlRequest,
+                bodyFileURL: bodyFileURL,
+                progress: progress
+            )
+            // A 401 after the body was submitted is surfaced as-is: the
+            // request is non-idempotent and must never be replayed.
             try Self.validate(response)
             do {
                 return try decoder.decode(Response.self, from: response.data)

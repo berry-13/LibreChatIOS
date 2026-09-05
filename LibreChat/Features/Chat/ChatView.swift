@@ -1,3 +1,4 @@
+import CoreTransferable
 import DesignKit
 import LibreChatDomain
 import PhotosUI
@@ -30,6 +31,26 @@ private struct PromptLibraryPresentation: Identifiable {
 
 private struct SkillPickerPresentation: Identifiable {
     let id = UUID()
+}
+
+/// Photos-library providers advertise image content, not raw URL
+/// transferables, so the picker loads through an image FileRepresentation
+/// that hands back a bounded, deletable file copy.
+struct PhotoAssetFile: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .image) { asset in
+            SentTransferredFile(asset.url)
+        } importing: { received in
+            let extensionSuffix = received.file.pathExtension.isEmpty
+                ? "img" : received.file.pathExtension
+            let copy = FileManager.default.temporaryDirectory
+                .appending(path: "photo-import-\(UUID().uuidString).\(extensionSuffix)")
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return Self(url: copy)
+        }
+    }
 }
 
 struct ChatView: View {
@@ -827,9 +848,10 @@ struct ChatView: View {
                     // file-backed copy, bound its bytes, and decode through
                     // a pixel-limited CGImageSource instead of
                     // materializing the complete asset as raw data.
-                    guard let fileURL = try await item.loadTransferable(type: URL.self) else { return }
+                    guard let asset = try await item.loadTransferable(type: PhotoAssetFile.self) else { return }
+                    defer { try? FileManager.default.removeItem(at: asset.url) }
                     let data = try Self.boundedDownsampledImageData(
-                        at: fileURL,
+                        at: asset.url,
                         limit: Self.maximumImportedFileBytes,
                         maxPixel: 4096
                     )

@@ -350,21 +350,24 @@ actor UploadManager: UploadRepository {
             upload.progress = 0
             try await update(upload)
 
-            let fileData = try Data(contentsOf: upload.localURL)
             let boundary = "LibreChat-\(UUID().uuidString)"
-            let body = Self.multipartBody(fileData: fileData, upload: upload, boundary: boundary)
+            // The multipart body is streamed from disk: materializing both the
+            // staged file and the complete request body in memory would let a
+            // few concurrent near-ceiling uploads exhaust the process.
+            let bodyFileURL = try Self.writeMultipartBodyFile(for: upload, boundary: boundary)
             var request = APIRequest<LibreChatFileDTO>(
                 method: .post,
                 path: Self.uploadPath(for: upload),
                 headers: ["Content-Type": "multipart/form-data; boundary=\(boundary)"],
                 retryPolicy: .never
             )
-            request.body = body
-            // Real byte-level progress from the transport's didSendBodyData;
-            // the in-memory copy only touches publish state, never the cache.
-            let response = try await runtime.restClient.sendUpload(request) { [weak self] fraction in
+            let response = try await runtime.restClient.sendUploadFile(
+                request,
+                bodyFileURL: bodyFileURL
+            ) { [weak self] fraction in
                 Task { await self?.reportProgress(id: id, fraction: fraction) }
             }
+            try? FileManager.default.removeItem(at: bodyFileURL)
             let remoteFile = try response.domainModel(fallbackFilename: upload.filename)
             upload = try Self.completedUpload(upload, acknowledging: remoteFile)
             try await update(upload)
@@ -586,6 +589,56 @@ actor UploadManager: UploadRepository {
             retryPolicy: .never
         )
         _ = try await runtime.restClient.send(request)
+    }
+
+    /// Streams the multipart body to a staging file: small text fields are
+    /// written directly, and the staged attachment bytes are copied through
+    /// in bounded chunks.
+    static func writeMultipartBodyFile(for upload: PendingUpload, boundary: String) throws -> URL {
+        let staging = FileManager.default.temporaryDirectory
+            .appending(path: "LibreChatUploadBodies", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let bodyURL = staging.appending(path: "\(upload.id.uuidString).body")
+        try Data().write(to: bodyURL)
+        let handle = try FileHandle(forWritingTo: bodyURL)
+        do {
+            var fields = Data()
+            appendField(name: "endpoint", value: upload.endpoint ?? "", boundary: boundary, to: &fields)
+            appendField(name: "endpointType", value: upload.endpointType ?? "", boundary: boundary, to: &fields)
+            appendField(name: "file_id", value: upload.id.uuidString, boundary: boundary, to: &fields)
+            appendField(name: "message_file", value: "true", boundary: boundary, to: &fields)
+            if let conversationID = upload.conversationID, !conversationID.isLocalDraft {
+                appendField(name: "conversationId", value: conversationID.rawValue, boundary: boundary, to: &fields)
+            }
+            if upload.isTemporary == true {
+                appendField(name: "isTemporary", value: "true", boundary: boundary, to: &fields)
+            }
+            if let width = upload.width {
+                appendField(name: "width", value: String(width), boundary: boundary, to: &fields)
+            }
+            if let height = upload.height {
+                appendField(name: "height", value: String(height), boundary: boundary, to: &fields)
+            }
+            try handle.write(contentsOf: fields)
+            try handle.write(contentsOf: Data("--\(boundary)\r\n".utf8))
+            let encodedFilename = upload.filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                ?? upload.filename
+            try handle.write(contentsOf: Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(encodedFilename)\"\r\n".utf8))
+            try handle.write(contentsOf: Data("Content-Type: \(upload.mimeType ?? "application/octet-stream")\r\n\r\n".utf8))
+
+            let source = try FileHandle(forReadingFrom: upload.localURL)
+            defer { try? source.close() }
+            while let chunk = try source.read(upToCount: 1_048_576), !chunk.isEmpty {
+                try handle.write(contentsOf: chunk)
+            }
+            try handle.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+            try handle.close()
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: bodyURL)
+            throw error
+        }
+        return bodyURL
     }
 
     static func multipartBody(fileData: Data, upload: PendingUpload, boundary: String) -> Data {
