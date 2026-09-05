@@ -46,17 +46,26 @@ final class BookmarksModel {
         await reload()
     }
 
+    /// Confirmed tag mutations advance this so a directory refresh that
+    /// captured pre-mutation state can never overwrite the newer list.
+    private var directoryRevision = 0
+
     func reload() async {
         guard operationName == nil else { return }
         if tags.isEmpty { state = .loading }
         errorMessage = nil
+        directoryRevision &+= 1
+        let revision = directoryRevision
         do {
-            tags = try await repository.conversationTags().sorted(by: Self.order)
+            let fresh = try await repository.conversationTags().sorted(by: Self.order)
+            guard revision == directoryRevision else { return }
+            tags = fresh
             state = .loaded
         } catch is CancellationError {
             return
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
+            guard revision == directoryRevision else { return }
             state = tags.isEmpty ? .failed(error.userFacingMessage) : .loaded
             errorMessage = tags.isEmpty ? nil : error.userFacingMessage
         }
@@ -102,6 +111,7 @@ final class BookmarksModel {
                     description: description
                 )
             )
+            directoryRevision &+= 1
             tags.removeAll { $0.id == existing.id || $0.tag == existing.tag }
             upsert(updated)
             return true
@@ -119,6 +129,7 @@ final class BookmarksModel {
         defer { operationName = nil }
         do {
             let deleted = try await repository.deleteConversationTag(named: tag.tag)
+            directoryRevision &+= 1
             tags.removeAll { $0.id == deleted.id || $0.tag == deleted.tag }
         } catch {
             if error.isUnauthorized { await onUnauthorized() }

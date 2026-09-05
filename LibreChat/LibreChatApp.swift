@@ -23,13 +23,14 @@ struct LibreChatApp: App {
         WindowGroup {
             AppRootView(model: model)
                 .modelContainer(dependencies.modelContainer)
-                .onChange(of: scenePhase) { _, phase in
-                    switch phase {
-                    case .active:
+                .onChange(of: scenePhase) { oldPhase, newPhase in
+                    // One transition emits .inactive then .background; only
+                    // the active→inactive edge may count, or a single scene
+                    // decrements the aggregate twice.
+                    if newPhase == .active, oldPhase != .active {
                         model.sceneBecameActive()
-                    case .inactive, .background:
-                        model.sceneResignedActive()
-                    @unknown default:
+                    }
+                    if oldPhase == .active, newPhase != .active {
                         model.sceneResignedActive()
                     }
                 }
