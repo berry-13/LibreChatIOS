@@ -181,7 +181,10 @@ public enum LibreChatProjectsAPI {
     ) throws -> APIRequest<LibreChatProjectAssignmentDTO> {
         try APIRequest(
             method: .put,
-            path: "api/projects/conversations/\(conversationID.rawValue)",
+            // The conversation id is server data; percent-encoding it into a
+            // single validated segment keeps a hostile value ('/', '.', '..')
+            // from splitting or normalizing the route.
+            path: "api/projects/conversations/\(try encodedPathComponent(conversationID.rawValue))",
             body: ProjectAssignmentRequestDTO(projectID: projectID?.rawValue)
         )
     }
@@ -190,15 +193,21 @@ public enum LibreChatProjectsAPI {
     /// path segment (rejecting dot-only values) so a malformed identifier can
     /// never normalize a GET/PATCH/DELETE onto a sibling or parent route.
     private static func projectPath(_ id: ProjectID) throws -> String {
-        guard !id.rawValue.isEmpty, id.rawValue != ".", id.rawValue != ".." else {
-            throw LibreChatProtocolError.encoding("The project identifier is not path safe.")
+        "api/projects/\(try encodedPathComponent(id.rawValue))"
+    }
+
+    /// Percent-encodes a server-supplied identifier into one RFC 3986-safe
+    /// path segment, rejecting dot-only traversal values.
+    private static func encodedPathComponent(_ rawValue: String) throws -> String {
+        guard !rawValue.isEmpty, rawValue != ".", rawValue != ".." else {
+            throw LibreChatProtocolError.encoding("The identifier is not path safe.")
         }
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
-        guard let encoded = id.rawValue.addingPercentEncoding(withAllowedCharacters: allowed) else {
-            throw LibreChatProtocolError.encoding("The project identifier could not be encoded safely.")
+        guard let encoded = rawValue.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw LibreChatProtocolError.encoding("The identifier could not be encoded safely.")
         }
-        return "api/projects/\(encoded)"
+        return encoded
     }
 }
 
