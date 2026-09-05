@@ -569,7 +569,7 @@ struct AgentAvatarIcon: View {
             }
             loadedImage = nil
             guard let data = await fetchServerImage(url),
-                  let decoded = UIImage(data: data) else { return }
+                  let decoded = ServerEntityImageStore.downsampledImage(from: data) else { return }
             ServerEntityImageStore.store(decoded, for: url)
             loadedImage = decoded
         }

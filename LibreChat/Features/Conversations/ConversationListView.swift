@@ -1722,6 +1722,23 @@ enum ServerEntityImageStore {
     static func removeAllCachedImages() {
         cache.removeAllObjects()
     }
+
+    /// Entity images render at avatar/icon sizes; decoding a highly
+    /// compressed source at full resolution can consume hundreds of
+    /// megabytes, so the cached image is pixel-limited.
+    static func downsampledImage(from data: Data, maxPixel: CGFloat = 512) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
 }
 
 /// LibreChat's endpoint branding, mirrored from the web client: white marks
@@ -1778,7 +1795,7 @@ struct EndpointBrandIcon: View {
             loadedImage = nil
             loadFailed = false
             guard let data = await fetchServerImage(url),
-                  let decoded = UIImage(data: data) else {
+                  let decoded = ServerEntityImageStore.downsampledImage(from: data) else {
                 loadFailed = true
                 return
             }
@@ -2449,7 +2466,7 @@ struct AccountFloatingButton: View {
                 return
             }
             guard let data = await fetchServerImage(url),
-                  let decoded = UIImage(data: data) else { return }
+                  let decoded = ServerEntityImageStore.downsampledImage(from: data) else { return }
             ServerEntityImageStore.store(decoded, for: url)
             loadedAvatar = decoded
         }

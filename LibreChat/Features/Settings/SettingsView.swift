@@ -615,7 +615,7 @@ private struct AccountProfileView: View {
             return
         }
         guard let data = await fetchServerImage(url),
-              let decoded = UIImage(data: data) else { return }
+              let decoded = ServerEntityImageStore.downsampledImage(from: data) else { return }
         ServerEntityImageStore.store(decoded, for: url)
         loadedAvatar = decoded
     }

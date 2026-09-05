@@ -730,8 +730,13 @@ final class AppModel {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
         }
         // Another scene switching servers mid-logout must not tear down the
-        // newly selected session's state.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        // newly selected session's state. The stale sign-out owned the busy
+        // flag; abandoning it must release that flag or the setup screen
+        // stays disabled.
+        guard selectionEpoch == profileSelectionEpoch else {
+            isWorking = false
+            return
+        }
         authenticationState = .signedOut(selectedServer.id)
         await uploadManager?.resetAfterCachePurge()
         uploadManager = nil
@@ -812,16 +817,24 @@ final class AppModel {
             return
         }
         guard let selectedServer else { return }
+        guard let purgeRuntime = activeRuntime else { return }
+        let purgeProfile = selectedServer
+        let purgeUploadManager = uploadManager
+        let selectionEpoch = profileSelectionEpoch
         cancelGenerationRecovery()
         generationRecoverySignal = nil
-        await activeRuntime?.repository.detachActiveStreams()
+        await purgeRuntime.repository.detachActiveStreams()
         do {
             try await dependencies.cache.purge(
-                profileID: selectedServer.id,
-                accountID: selectedServer.accountIdentifier
+                profileID: purgeProfile.id,
+                accountID: purgeProfile.accountIdentifier
             )
-            await activeRuntime?.repository.resetInMemoryState()
-            await uploadManager?.resetAfterCachePurge()
+            // Only the originating profile's namespace was purged; a scene
+            // that switched profiles mid-purge must keep its own uploads and
+            // in-memory state untouched.
+            guard selectionEpoch == profileSelectionEpoch else { return }
+            await purgeRuntime.repository.resetInMemoryState()
+            await purgeUploadManager?.resetAfterCachePurge()
             cacheEpoch = UUID()
             notice = "Saved cache cleared. LibreChat will reload this server's current data."
             if !isOffline, let repository = activeRuntime?.repository {
@@ -845,6 +858,22 @@ final class AppModel {
 
     func engageAppLockForInactiveScene() {
         if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
+    }
+
+    /// The app enables multiple scenes: generation streams and the lock are
+    /// global, so teardown engages only when the LAST active scene resigns.
+    private var activeSceneCount = 0
+
+    func sceneBecameActive() {
+        activeSceneCount += 1
+        Task { await applicationBecameActive() }
+    }
+
+    func sceneResignedActive() {
+        activeSceneCount = max(0, activeSceneCount - 1)
+        guard activeSceneCount == 0 else { return }
+        engageAppLockForInactiveScene()
+        Task { await applicationBecameInactive() }
     }
 
     func applicationBecameInactive() async {
@@ -1034,6 +1063,10 @@ final class AppModel {
         await uploadManager?.resetAfterCachePurge()
         uploadManager = nil
 
+        // Cleanup suspended past the earlier epoch check: if another scene
+        // selected a different profile meanwhile, the deleted account's
+        // profile must not be reinstated over it.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         profile.accountIdentifier = nil
         if let capabilities = profile.capabilities {
             profile.capabilities = capabilities.failingClosedAuthenticatedPolicy()

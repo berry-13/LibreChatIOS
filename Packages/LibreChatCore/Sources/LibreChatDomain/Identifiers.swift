@@ -206,6 +206,9 @@ public struct SharedLinkID: LibreChatIdentifier {
     /// the accepted set URL-path safe and reject traversal/separator input.
     public var isSafePathComponent: Bool {
         guard (1...256).contains(rawValue.utf8.count) else { return false }
+        // Dots may appear inside an id, but dot-only values normalize to
+        // parent routes once interpolated into a path.
+        guard rawValue != ".", rawValue != ".." else { return false }
         return rawValue.unicodeScalars.allSatisfy { scalar in
             switch scalar.value {
             case 48...57, 65...90, 97...122: true
