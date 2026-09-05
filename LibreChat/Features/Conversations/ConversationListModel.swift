@@ -984,11 +984,22 @@ enum UnsentCanvasManifestStore {
     static func save(_ canvas: LibreChatDomain.Conversation) {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            excludeFromBackups(directory)
             let data = try JSONEncoder().encode(canvas)
             try data.write(to: url(for: canvas.id), options: .atomic)
+            excludeFromBackups(url(for: canvas.id))
         } catch {
             AppLog.persistence.error("Unsent canvas metadata could not be persisted.")
         }
+    }
+
+    /// Canvas metadata carries private targets and prompts; it follows the
+    /// same backup-exclusion policy as the rest of the offline store.
+    private static func excludeFromBackups(_ url: URL) {
+        var mutableURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? mutableURL.setResourceValues(resourceValues)
     }
 
     static func remove(_ id: ConversationID) {

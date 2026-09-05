@@ -2070,7 +2070,18 @@ private struct UploadChip: View {
                 .task(id: upload.localURL) {
                     guard thumbnail == nil,
                           upload.width != nil, upload.height != nil else { return }
-                    thumbnail = UIImage(contentsOfFile: upload.localURL.path)
+                    // A highly compressed staged image can decompress to
+                    // hundreds of MB at full resolution; the chip renders at
+                    // ~34pt, so decode a pixel-limited thumbnail instead.
+                    guard let source = CGImageSourceCreateWithURL(upload.localURL as CFURL, nil) else { return }
+                    let options: [CFString: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 240,
+                    ]
+                    guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return }
+                    thumbnail = UIImage(cgImage: cgImage)
                 }
 
             VStack(alignment: .leading, spacing: 1) {

@@ -92,7 +92,7 @@ struct ProjectsContractTests {
         #expect(try bodyObject(create)["name"] as? String == "Research")
         #expect(try bodyObject(create)["description"] as? String == "Q3")
 
-        let read = LibreChatProjectsAPI.project(id: projectID)
+        let read = try LibreChatProjectsAPI.project(id: projectID)
         #expect(read.method == .get)
         #expect(read.path == "api/projects/507f1f77bcf86cd799439011")
 
@@ -108,7 +108,7 @@ struct ProjectsContractTests {
         )
         #expect(try bodyObject(clearDescription)["description"] as? String == "")
 
-        let delete = LibreChatProjectsAPI.delete(id: projectID)
+        let delete = try LibreChatProjectsAPI.delete(id: projectID)
         #expect(delete.method == .delete)
         #expect(delete.path == read.path)
         #expect(delete.retryPolicy == .never)
