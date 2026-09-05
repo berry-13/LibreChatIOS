@@ -198,6 +198,7 @@ struct ConversationListView: View {
 
     private func renameProject(_ project: ChatProject, to name: String) async {
         guard let repository = appModel.repository, !appModel.isOffline else { return }
+        let originatingProfileID = appModel.selectedServer?.id
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
@@ -208,25 +209,26 @@ struct ConversationListView: View {
         } catch is CancellationError {
             return
         } catch {
-            if error.isUnauthorized { await appModel.expireSession() }
+            if error.isUnauthorized { await appModel.expireSession(for: originatingProfileID) }
         }
         await menuDirectories.load(
             repository: appModel.repository,
             isOffline: appModel.isOffline,
             canUseBookmarks: appModel.canUseBookmarks,
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         )
     }
 
     private func deleteProject(_ project: ChatProject) async {
         guard let repository = appModel.repository, !appModel.isOffline else { return }
+        let originatingProfileID = appModel.selectedServer?.id
         do {
             _ = try await repository.deleteProject(id: project.id)
             expandedProjectIDs.remove(project.id)
         } catch is CancellationError {
             return
         } catch {
-            if error.isUnauthorized { await appModel.expireSession() }
+            if error.isUnauthorized { await appModel.expireSession(for: originatingProfileID) }
         }
         // The dropped project's chats are unassigned server-side; refresh
         // both the directory and the list so its rows and nested chats leave.
@@ -234,7 +236,7 @@ struct ConversationListView: View {
             repository: appModel.repository,
             isOffline: appModel.isOffline,
             canUseBookmarks: appModel.canUseBookmarks,
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         )
         await model.reload()
     }
@@ -461,7 +463,7 @@ struct ConversationListView: View {
                 repository: appModel.repository,
                 isOffline: appModel.isOffline,
                 canUseBookmarks: appModel.canUseBookmarks,
-                onUnauthorized: { await appModel.expireSession() }
+                onUnauthorized: appModel.expireSessionCallback()
             )
         }
         .overlay(alignment: .bottom) {
@@ -605,7 +607,7 @@ struct ConversationListView: View {
             listModel: model,
             isOffline: appModel.isOffline,
             canUseBookmarks: appModel.canUseBookmarks,
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         )
         organizer.moveToProjectSection
         organizer.bookmarksSection

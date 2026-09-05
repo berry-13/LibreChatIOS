@@ -222,10 +222,17 @@ public actor MirroredSecretStore: SecretStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         Self.excludeFromBackups(directory)
         let url = fileURL(for: key)
-        try data.write(
-            to: url,
-            options: [.atomic, .completeFileProtection]
-        )
+        do {
+            try data.write(
+                to: url,
+                options: [.atomic, .completeFileProtection]
+            )
+        } catch {
+            // The DEBUG-only mirror must also work on macOS and in test
+            // hosts, where the OS can refuse the iOS protection class; a
+            // plain atomic write keeps the recovery mirror alive there.
+            try data.write(to: url, options: [.atomic])
+        }
         Self.excludeFromBackups(url)
     }
 
@@ -275,8 +282,10 @@ public actor ProfileCookieJar {
             .sorted { $0.path.count > $1.path.count }
         if eligible.isEmpty {
             let storedCount = cookies.count
+            // The raw path embeds conversation/message identifiers; only the
+            // route class may be logged publicly.
             cookiesLog.notice(
-                "Cookie header empty path=\(url.path, privacy: .public) stored=\(storedCount, privacy: .public)"
+                "Cookie header empty route=\(ProtocolRoute.classify(path: url.path).rawValue, privacy: .public) stored=\(storedCount, privacy: .public)"
             )
         }
         guard !eligible.isEmpty else { return nil }

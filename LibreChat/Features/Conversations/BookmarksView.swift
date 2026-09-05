@@ -281,18 +281,24 @@ private final class BookmarkedConversationListModel {
         }
     }
 
+    /// Refreshes advance this so a stale pagination result computed from a
+    /// superseded first page can never append after a fresh reload.
+    private var listingRevision = 0
+
     func loadMoreIfNeeded(after conversation: LibreChatDomain.Conversation) async {
         guard conversation.id == conversations.last?.id,
               let nextCursor,
               !isLoadingMore else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
+        let revision = listingRevision
         do {
             let page = try await repository.bookmarkedConversations(
                 tag: tag,
                 cursor: nextCursor,
                 limit: 25
             )
+            guard revision == listingRevision else { return }
             let known = Set(conversations.map(\.id))
             conversations.append(contentsOf: page.conversations.filter { !known.contains($0.id) })
             self.nextCursor = page.nextCursor
@@ -301,6 +307,7 @@ private final class BookmarkedConversationListModel {
             return
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
+            guard revision == listingRevision else { return }
             paginationError = error.userFacingMessage
         }
     }

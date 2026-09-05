@@ -28,6 +28,7 @@ struct AgentsView: View {
         conversationListModel: ConversationListModel,
         openConversation: @escaping (LibreChatDomain.Conversation) -> Void
     ) {
+        let originatingProfileID = appModel.selectedServer?.id
         self.appModel = appModel
         self.repository = repository
         self.conversationListModel = conversationListModel
@@ -37,7 +38,7 @@ struct AgentsView: View {
             creationRepository: repository,
             isOffline: { appModel.isOffline },
             creationEnabled: { appModel.canCreateAgents },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: { await appModel.expireSession(for: originatingProfileID) }
         ))
     }
 
@@ -610,6 +611,7 @@ private struct AgentDetailView: View {
         openConversation: @escaping (LibreChatDomain.Conversation) -> Void,
         onDirectoryChanged: @escaping @MainActor () async -> Void
     ) {
+        let originatingProfileID = appModel.selectedServer?.id
         self.summary = summary
         self.appModel = appModel
         self.repository = repository
@@ -620,7 +622,7 @@ private struct AgentDetailView: View {
             id: summary.id,
             repository: repository,
             managementRepository: repository,
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: { await appModel.expireSession(for: originatingProfileID) }
         ))
     }
 

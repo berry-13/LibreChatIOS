@@ -18,7 +18,7 @@ struct MemoriesView: View {
             permissions: permissions,
             memoriesEnabled: appModel.user?.memoriesEnabled ?? true,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() },
+            onUnauthorized: appModel.expireSessionCallback(),
             onPreferenceChanged: { await appModel.recordMemoriesEnabled($0) }
         ))
     }

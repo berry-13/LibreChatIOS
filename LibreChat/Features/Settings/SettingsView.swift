@@ -132,7 +132,7 @@ struct SettingsView: View {
                 NavigationLink {
                     ArchivedConversationsView(
                         repository: repository,
-                        onUnauthorized: { await appModel.expireSession() },
+                        onUnauthorized: appModel.expireSessionCallback(),
                         onUnarchived: { conversation in
                             includeConversation?(conversation)
                         },
@@ -151,7 +151,7 @@ struct SettingsView: View {
                         BookmarksView(
                             repository: repository,
                             isOffline: { appModel.isOffline },
-                            onUnauthorized: { await appModel.expireSession() },
+                            onUnauthorized: appModel.expireSessionCallback(),
                             onSelectConversation: { conversation in
                                 openConversation?(conversation)
                                 dismiss()

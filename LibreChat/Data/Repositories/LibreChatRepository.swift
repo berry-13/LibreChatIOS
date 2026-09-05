@@ -1527,7 +1527,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             if basePath.hasSuffix("/") { basePath.removeLast() }
             var fullPath = components.path
             var pathEscapesDeploymentBase = false
-            if !basePath.isEmpty, fullPath.hasPrefix(basePath) {
+            // The base path must match exactly or up to a "/" boundary:
+            // `/librechat-assets` shares a prefix with base `/librechat`
+            // but lives outside the deployment.
+            let insideBase = basePath.isEmpty
+                || fullPath == basePath
+                || fullPath.hasPrefix(basePath + "/")
+            if insideBase {
                 fullPath = String(fullPath.dropFirst(basePath.count))
             } else {
                 // The image lives at the origin root, outside a deployment
@@ -1593,7 +1599,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         input: UpdateChatProjectInput
     ) async throws -> ChatProject {
         let request = try LibreChatProjectsAPI.update(id: id, input: input)
-        return try await runtime.restClient.send(request).domainModel()
+        let project = try await runtime.restClient.send(request).domainModel()
+        // A stale or foreign 2xx payload must never replace the edited
+        // project in local state.
+        guard project.id == id else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        return project
     }
 
     func deleteProject(id: ProjectID) async throws -> DeleteChatProjectResult {
@@ -1687,7 +1699,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             conversationID: conversationID,
             request: request
         )
-        return try await runtime.restClient.send(apiRequest).domainModel()
+        let result = try await runtime.restClient.send(apiRequest).domainModel()
+        // The owner sheet presents this URL as the viewed conversation's;
+        // a stale or foreign payload must never pass.
+        guard result.conversationID == conversationID else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        return result
     }
 
     func updateSharedLink(
@@ -1698,13 +1716,23 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             shareID: shareID,
             request: request
         )
-        return try await runtime.restClient.send(apiRequest).domainModel()
+        let result = try await runtime.restClient.send(apiRequest).domainModel()
+        guard result.shareID == shareID else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        return result
     }
 
     func deleteSharedLink(_ shareID: SharedLinkID) async throws -> SharedLinkDeletionResult {
-        try await runtime.restClient.send(
+        let result = try await runtime.restClient.send(
             try LibreChatSharedLinksAPI.delete(shareID: shareID)
         ).domainModel()
+        // A malformed success payload naming another share must never clear
+        // the requested link from the owner UI while it stays public.
+        guard result.shareID == shareID else {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        return result
     }
 
     func sharedSnapshot(for shareID: SharedLinkID) async throws -> SharedConversationSnapshot {
@@ -2692,7 +2720,17 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
     ) async throws -> ConversationTag {
         let request = try LibreChatConversationTagsAPI.update(named: tag, input: input)
         do {
-            return try await runtime.restClient.send(request).domainModel()
+            let updated = try await runtime.restClient.send(request).domainModel()
+            // A stale or foreign 2xx payload must never replace the edited
+            // tag: the echoed name must equal the requested resulting name
+            // and honor any supplied fields.
+            let desiredName = input.tag ?? tag
+            let descriptionMatches = input.description.map { updated.description == $0 } ?? true
+            let positionMatches = input.position.map { updated.position == $0 } ?? true
+            guard updated.tag == desiredName, descriptionMatches, positionMatches else {
+                throw LibreChatProtocolError.invalidResponse
+            }
+            return updated
         } catch {
             let originalError = error
             guard Self.isAmbiguousConversationMutationFailure(error) else { throw error }
@@ -2772,7 +2810,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         matches: @escaping (LibreChatDomain.Conversation) -> Bool
     ) async throws -> LibreChatDomain.Conversation {
         do {
-            return try await runtime.restClient.send(request).domainModel()
+            let conversation = try await runtime.restClient.send(request).domainModel()
+            // A 2xx body carrying another conversation or pre-mutation
+            // state must never be returned as a completed mutation.
+            guard conversation.id == id, matches(conversation) else {
+                throw LibreChatProtocolError.invalidResponse
+            }
+            return conversation
         } catch {
             let mutationError = error
             guard Self.isAmbiguousConversationMutationFailure(error) else { throw error }
@@ -4234,7 +4278,11 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                         continuation.finish()
                         return
                     } catch let error as LibreChatProtocolError {
-                        if case .httpStatus(401, _, _) = error {
+                        let unauthorized = error == .unauthorized || {
+                            if case .httpStatus(401, _, _) = error { return true }
+                            return false
+                        }()
+                        if unauthorized {
                             AppLog.generation.notice("Generation stream authorization expired; requesting one serialized refresh.")
                             do { _ = try await self.runtime.authSession.refresh() } catch {
                                 AppLog.generation.error("Generation stream refresh failed; the stream will close as unauthorized.")

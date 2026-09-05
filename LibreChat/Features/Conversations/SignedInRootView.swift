@@ -39,7 +39,7 @@ struct SignedInRootView: View {
                 presetCreationRepository: repository,
                 isOffline: { appModel.isOffline },
                 presetsEnabled: { appModel.canUsePresets },
-                onUnauthorized: { await appModel.expireSession() },
+                onUnauthorized: appModel.expireSessionCallback(),
                 draftCanvasProbe: { conversationID in
                     // Local content check for the sidebar's draft rows: saved
                     // composer text, else in-flight attachments.
@@ -58,7 +58,7 @@ struct SignedInRootView: View {
             initialValue: SearchModel(
                 repository: repository,
                 isOffline: { appModel.isOffline },
-                onUnauthorized: { await appModel.expireSession() }
+                onUnauthorized: appModel.expireSessionCallback()
             )
         )
     }
@@ -368,7 +368,7 @@ struct SignedInRootView: View {
                 promptUserName: appModel.user?.name,
                 temporaryChatPolicy: appModel.temporaryChatPolicy,
                 compatibilityWarning: { appModel.compatibilityWarning },
-                onUnauthorized: { await appModel.expireSession() },
+                onUnauthorized: appModel.expireSessionCallback(),
                 onConversationForked: replaceCurrentChat,
                 onConversationDismissed: dismissConversation,
                 onOpenSidebar: { openSidebar() },
@@ -444,7 +444,7 @@ struct SignedInRootView: View {
                     promptUserName: appModel.user?.name,
                     temporaryChatPolicy: appModel.temporaryChatPolicy,
                     compatibilityWarning: { appModel.compatibilityWarning },
-                    onUnauthorized: { await appModel.expireSession() },
+                    onUnauthorized: appModel.expireSessionCallback(),
                     onConversationForked: replaceCurrentChat,
                     onConversationDismissed: dismissConversation,
                     onConversationIdentityChanged: updateConversationIdentity

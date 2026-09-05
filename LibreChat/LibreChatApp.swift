@@ -24,6 +24,12 @@ struct LibreChatApp: App {
             AppRootView(model: model)
                 .modelContainer(dependencies.modelContainer)
                 .onChange(of: scenePhase) { _, phase in
+                    // The lock engages synchronously in the callback: iOS
+                    // can capture the app-switcher snapshot before any
+                    // scheduled async teardown gets to run.
+                    if phase != .active {
+                        model.engageAppLockForInactiveScene()
+                    }
                     Task {
                         switch phase {
                         case .active:

@@ -125,7 +125,14 @@ final class SharedSnapshotModel {
                 return nil
             }
         } catch {
-            guard !(error is CancellationError) else { return nil }
+            // A cancellation after the non-retried POST reached the server
+            // leaves the outcome unknown: the copy may already exist, so a
+            // retry is locked out until the user reconciles via refresh.
+            guard !(error is CancellationError) else {
+                forkOutcomeMayBeAmbiguous = true
+                forkUnavailableReason = "The copy request was interrupted. It may already exist, so refresh your chat list before trying again."
+                return nil
+            }
             operationError = error.userFacingMessage
             return nil
         }

@@ -22,7 +22,7 @@ struct ProjectsView: View {
         _model = State(initialValue: ProjectListModel(
             repository: repository,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 
@@ -253,7 +253,7 @@ private struct ProjectDetailView: View {
             projectRepository: repository,
             conversationRepository: repository,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 
@@ -572,7 +572,7 @@ struct ProjectAssignmentSheet: View {
         _model = State(initialValue: ProjectListModel(
             repository: repository,
             isOffline: { appModel.isOffline },
-            onUnauthorized: { await appModel.expireSession() }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 

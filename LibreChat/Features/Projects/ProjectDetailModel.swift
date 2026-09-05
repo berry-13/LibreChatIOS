@@ -76,7 +76,12 @@ final class ProjectDetailModel {
             let (freshProject, page) = try await (projectResult, conversationResult)
             guard revision == requestRevision else { return }
             project = freshProject
-            conversations = page.conversations
+            // Unsent project-scoped drafts exist only on device; a refresh
+            // must carry them forward or the user's unsent work becomes
+            // unreachable.
+            let refreshedIDs = Set(page.conversations.map(\.id))
+            let carriedDrafts = conversations.filter { $0.id.isLocalDraft && !refreshedIDs.contains($0.id) }
+            conversations = page.conversations + carriedDrafts
             nextCursor = page.nextCursor
             errorMessage = nil
             state = .loaded

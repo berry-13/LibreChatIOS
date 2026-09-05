@@ -86,7 +86,9 @@ final class PromptLibraryModel {
         isLoadingMore = true
         paginationError = nil
         let revision = requestRevision
-        defer { if revision == requestRevision { isLoadingMore = false } }
+        // A superseding reload must leave pagination usable: the flag is
+        // cleared even when this stale request exits through its guard.
+        defer { isLoadingMore = false }
         do {
             let page = try await repository.promptGroups(PromptTemplateQuery(
                 search: query,

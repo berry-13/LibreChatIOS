@@ -654,6 +654,8 @@ final class AppModel {
 
     func confirmAccountReplacement() async {
         guard let session = pendingAccountReplacement, let activeRuntime, let selectedServer else { return }
+        ServerEntityImageStore.removeAllCachedImages()
+        FileImagePreviewStore.removeAllCachedImages()
         isWorking = true
         defer { isWorking = false }
         if let oldAccount = selectedServer.accountIdentifier {
@@ -669,6 +671,8 @@ final class AppModel {
     func cancelAccountReplacement() async {
         pendingAccountReplacement = nil
         generationRecoverySignal = nil
+        ServerEntityImageStore.removeAllCachedImages()
+        FileImagePreviewStore.removeAllCachedImages()
         await activeRuntime?.protocolRuntime.authSession.logout()
         if let profileID = selectedServer?.id {
             authenticationState = .signedOut(profileID)
@@ -682,6 +686,8 @@ final class AppModel {
 
     func signOut() async {
         guard let selectedServer else { return }
+        ServerEntityImageStore.removeAllCachedImages()
+        FileImagePreviewStore.removeAllCachedImages()
         isWorking = true
         cancelGenerationRecovery()
         generationRecoverySignal = nil
@@ -699,8 +705,19 @@ final class AppModel {
         phase = .signedOut
     }
 
-    func expireSession() async {
+    /// Builds an expiry callback bound to the profile selected at creation
+    /// time: a 401 raised by a superseded session must never tear down the
+    /// newly selected one.
+    func expireSessionCallback() -> @MainActor () async -> Void {
+        let originatingProfileID = selectedServer?.id
+        return { [weak self] in await self?.expireSession(for: originatingProfileID) }
+    }
+
+    func expireSession(for originatingProfileID: ServerProfileID? = nil) async {
         guard let selectedServer else { return }
+        // A late 401 raised by a profile the user already switched away
+        // from must never tear down the newly selected session.
+        if let originatingProfileID, originatingProfileID != selectedServer.id { return }
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await activeRuntime?.repository.detachActiveStreams()
@@ -780,6 +797,12 @@ final class AppModel {
         }
     }
 
+    /// Called synchronously from the scene-phase callback so the lock screen
+    /// replaces the signed-in content before iOS can snapshot the scene.
+    func engageAppLockForInactiveScene() {
+        if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
+    }
+
     func applicationBecameInactive() async {
         isApplicationActive = false
         // The lock engages synchronously, before the first suspension point:
@@ -826,8 +849,12 @@ final class AppModel {
 
     func confirmTwoFactorSetup(code: String) async throws {
         guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
+        let selectionEpoch = profileSelectionEpoch
         try await activeRuntime.protocolRuntime.authSession.confirmTwoFactorSetup(code: code)
         await activeRuntime.protocolRuntime.authSession.updateTwoFactorStatus(true)
+        // Another scene can switch profiles while the request is suspended;
+        // the result must never mutate the new account's 2FA state.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         updateTwoFactorStatus(true)
     }
 
@@ -838,8 +865,10 @@ final class AppModel {
 
     func disableTwoFactor(proof: TwoFactorProof) async throws {
         guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
+        let selectionEpoch = profileSelectionEpoch
         try await activeRuntime.protocolRuntime.authSession.disableTwoFactor(proof: proof)
         await activeRuntime.protocolRuntime.authSession.updateTwoFactorStatus(false)
+        guard selectionEpoch == profileSelectionEpoch else { return }
         updateTwoFactorStatus(false)
     }
 
