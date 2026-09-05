@@ -199,12 +199,19 @@ final class AgentDirectoryModel {
                 cursor: nil,
                 limit: 25
             )
-            creationRequiresRefresh = false
-            attemptedCreationName = nil
-            if let created = lookup.agents.first(where: { $0.name == attempted }),
-               !agents.contains(where: { $0.id == created.id }) {
-                agents.insert(created, at: 0)
+            if let created = lookup.agents.first(where: { $0.name == attempted }) {
+                creationRequiresRefresh = false
+                attemptedCreationName = nil
+                if !agents.contains(where: { $0.id == created.id }) {
+                    agents.insert(created, at: 0)
+                }
+            } else if lookup.nextCursor == nil {
+                // The complete result set rules the create out.
+                creationRequiresRefresh = false
+                attemptedCreationName = nil
             }
+            // An incomplete (>25 rows) lookup without a match keeps retry
+            // locked: the created agent may still be on a later page.
         } catch {
             // Reconciliation itself failed; keep retry locked.
         }

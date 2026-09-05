@@ -755,19 +755,24 @@ final class AppModel {
     }
 
     func expireSession(for originatingProfileID: ServerProfileID? = nil) async {
-        guard let selectedServer else { return }
+        guard let selectedServer, let expiringRuntime = activeRuntime else { return }
+        let expiringUploadManager = uploadManager
+        let selectionEpoch = profileSelectionEpoch
         // A late 401 raised by a profile the user already switched away
         // from must never tear down the newly selected session.
         if let originatingProfileID, originatingProfileID != selectedServer.id { return }
         cancelGenerationRecovery()
         generationRecoverySignal = nil
-        await activeRuntime?.repository.detachActiveStreams()
-        try? await activeRuntime?.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        await expiringRuntime.repository.detachActiveStreams()
+        try? await expiringRuntime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
         }
+        // Every lookup after a suspension must stay bound to the session
+        // that actually expired.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         authenticationState = .signedOut(selectedServer.id)
-        await uploadManager?.resetAfterCachePurge()
+        await expiringUploadManager?.resetAfterCachePurge()
         uploadManager = nil
         pendingTerms = nil
         notice = "Your session expired. Sign in to continue."
@@ -962,6 +967,10 @@ final class AppModel {
         updateTwoFactorStatus(false)
     }
 
+    /// Avatar mutations advance this so a profile GET that captured the old
+    /// avatar can never overwrite the freshly reconciled account.
+    private var accountStateRevision = 0
+
     func refreshAccountProfile() async throws -> UserAccount {
         guard phase == .signedIn,
               !isOffline,
@@ -970,6 +979,8 @@ final class AppModel {
             throw LibreChatProtocolError.unauthorized
         }
         let selectionEpoch = profileSelectionEpoch
+        accountStateRevision &+= 1
+        let revision = accountStateRevision
         let account = try await runtime.repository.accountProfile()
         try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
         guard profile.id == selectedServer?.id,
@@ -977,6 +988,8 @@ final class AppModel {
             throw AccountProfileError.accountMismatch
         }
         let resolvedAccount = Self.accountWithResolvedAvatar(account, baseURL: profile.baseURL)
+        // An overlapping avatar mutation supersedes this older read.
+        guard revision == accountStateRevision else { return resolvedAccount }
         authenticationState = .authenticated(resolvedAccount)
         try await dependencies.cache.saveAccount(profileID: profile.id, account: resolvedAccount)
         return resolvedAccount
@@ -1026,6 +1039,8 @@ final class AppModel {
             throw AccountProfileError.accountMismatch
         }
         let resolvedAccount = Self.accountWithResolvedAvatar(reconciledAccount, baseURL: profile.baseURL)
+        // The confirmed avatar supersedes any profile read captured before it.
+        accountStateRevision &+= 1
         authenticationState = .authenticated(resolvedAccount)
         try await dependencies.cache.saveAccount(profileID: profile.id, account: resolvedAccount)
         return resolvedAccount
@@ -1060,13 +1075,12 @@ final class AppModel {
             AppLog.persistence.error("Deleted-account cache purge failed; the namespace was hidden.")
         }
         await runtime.repository.resetInMemoryState()
-        await uploadManager?.resetAfterCachePurge()
-        uploadManager = nil
-
         // Cleanup suspended past the earlier epoch check: if another scene
         // selected a different profile meanwhile, the deleted account's
-        // profile must not be reinstated over it.
+        // manager must be torn down — but never the new profile's.
         guard selectionEpoch == profileSelectionEpoch else { return }
+        await uploadManager?.resetAfterCachePurge()
+        uploadManager = nil
         profile.accountIdentifier = nil
         if let capabilities = profile.capabilities {
             profile.capabilities = capabilities.failingClosedAuthenticatedPolicy()

@@ -54,8 +54,13 @@ public enum JSONValue: Codable, Equatable, Hashable, Sendable {
     }
 
     public var intValue: Int? {
-        if case let .number(value) = self { return Int(value) }
-        return nil
+        guard case let .number(value) = self else { return nil }
+        // A valid JSON number can sit far outside platform Int bounds
+        // (e.g. 1e100); Int(value) would trap instead of returning nil.
+        guard value.isFinite, value >= Double(Int.min), value <= Double(Int.max) else {
+            return nil
+        }
+        return Int(value)
     }
 
     public var doubleValue: Double? {

@@ -355,6 +355,9 @@ actor UploadManager: UploadRepository {
             // staged file and the complete request body in memory would let a
             // few concurrent near-ceiling uploads exhaust the process.
             let bodyFileURL = try Self.writeMultipartBodyFile(for: upload, boundary: boundary)
+            // Every exit — success, throw, or cancellation — removes the
+            // attachment-sized staging file.
+            defer { try? FileManager.default.removeItem(at: bodyFileURL) }
             var request = APIRequest<LibreChatFileDTO>(
                 method: .post,
                 path: Self.uploadPath(for: upload),
