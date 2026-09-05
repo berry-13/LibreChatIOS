@@ -193,12 +193,17 @@ final class AgentDirectoryModel {
             creationRequiresRefresh = false
             return
         }
+        // A search change during the lookup owns the list; the stale result
+        // must neither insert into it nor flip the directory state.
+        let expectedRevision = revision
+        let expectedQuery = normalizedQuery
         do {
             let lookup = try await repository.agents(
                 search: attempted,
                 cursor: nil,
                 limit: 25
             )
+            guard expectedRevision == revision, expectedQuery == normalizedQuery else { return }
             if let created = lookup.agents.first(where: { $0.name == attempted }) {
                 creationRequiresRefresh = false
                 attemptedCreationName = nil

@@ -84,6 +84,7 @@ final class BookmarksModel {
                     description: description.isEmpty ? nil : description
                 )
             )
+            directoryRevision &+= 1
             upsert(created)
             return true
         } catch {

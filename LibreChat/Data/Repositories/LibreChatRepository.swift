@@ -1586,7 +1586,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
     }
 
     func project(id: ProjectID) async throws -> ChatProject {
-        try await runtime.restClient.send(LibreChatProjectsAPI.project(id: id)).domainModel()
+        try await runtime.restClient.send(try LibreChatProjectsAPI.project(id: id)).domainModel()
     }
 
     func createProject(_ input: CreateChatProjectInput) async throws -> ChatProject {
@@ -1610,7 +1610,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
 
     func deleteProject(id: ProjectID) async throws -> DeleteChatProjectResult {
         let accountID = try activeAccountID()
-        let result = try await runtime.restClient.send(LibreChatProjectsAPI.delete(id: id)).domainModel()
+        let result = try await runtime.restClient.send(try LibreChatProjectsAPI.delete(id: id)).domainModel()
         do {
             try await cache.clearProjectMembership(
                 projectID: id,

@@ -158,8 +158,8 @@ public enum LibreChatProjectsAPI {
 
     public static func project(
         id: ProjectID
-    ) -> APIRequest<LibreChatProjectDTO> {
-        APIRequest(path: projectPath(id))
+    ) throws -> APIRequest<LibreChatProjectDTO> {
+        APIRequest(path: try projectPath(id))
     }
 
     public static func update(
@@ -171,8 +171,8 @@ public enum LibreChatProjectsAPI {
 
     public static func delete(
         id: ProjectID
-    ) -> APIRequest<LibreChatDeleteProjectDTO> {
-        APIRequest(method: .delete, path: projectPath(id), retryPolicy: .never)
+    ) throws -> APIRequest<LibreChatDeleteProjectDTO> {
+        try APIRequest(method: .delete, path: projectPath(id), retryPolicy: .never)
     }
 
     public static func assign(
@@ -186,8 +186,19 @@ public enum LibreChatProjectsAPI {
         )
     }
 
-    private static func projectPath(_ id: ProjectID) -> String {
-        "api/projects/\(id.rawValue)"
+    /// Project IDs are opaque server data: percent-encode them into a single
+    /// path segment (rejecting dot-only values) so a malformed identifier can
+    /// never normalize a GET/PATCH/DELETE onto a sibling or parent route.
+    private static func projectPath(_ id: ProjectID) throws -> String {
+        guard !id.rawValue.isEmpty, id.rawValue != ".", id.rawValue != ".." else {
+            throw LibreChatProtocolError.encoding("The project identifier is not path safe.")
+        }
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        guard let encoded = id.rawValue.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw LibreChatProtocolError.encoding("The project identifier could not be encoded safely.")
+        }
+        return "api/projects/\(encoded)"
     }
 }
 
