@@ -32,6 +32,9 @@ final class AgentDirectoryModel {
     private(set) var pageError: String?
     private(set) var isCreatingAgent = false
     private(set) var creationRequiresRefresh = false
+    /// Name submitted by the outcome-unknown create; reloads reconcile the
+    /// outcome with an authoritative name lookup before unlocking retry.
+    private var attemptedCreationName: String?
 
     init(
         repository: any AgentRepository,
@@ -140,6 +143,7 @@ final class AgentDirectoryModel {
                 await reload()
             case .outcomeUnknown:
                 creationRequiresRefresh = true
+                attemptedCreationName = request.name
             }
             return outcome
         } catch {
@@ -172,11 +176,37 @@ final class AgentDirectoryModel {
             guard expectedRevision == revision, expectedQuery == normalizedQuery else { return }
             agents = page.agents
             nextCursor = page.nextCursor
-            creationRequiresRefresh = false
+            await reconcileCreationOutcome()
             state = .loaded
         } catch {
             guard expectedRevision == revision else { return }
             await handle(error)
+        }
+    }
+
+    /// The post-create refresh can miss the created agent (search filter or
+    /// later page), so retry stays locked until an exact-name lookup either
+    /// observes it or authoritatively rules it out.
+    private func reconcileCreationOutcome() async {
+        guard creationRequiresRefresh else { return }
+        guard let attempted = attemptedCreationName else {
+            creationRequiresRefresh = false
+            return
+        }
+        do {
+            let lookup = try await repository.agents(
+                search: attempted,
+                cursor: nil,
+                limit: 25
+            )
+            creationRequiresRefresh = false
+            attemptedCreationName = nil
+            if let created = lookup.agents.first(where: { $0.name == attempted }),
+               !agents.contains(where: { $0.id == created.id }) {
+                agents.insert(created, at: 0)
+            }
+        } catch {
+            // Reconciliation itself failed; keep retry locked.
         }
     }
 

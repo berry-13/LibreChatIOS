@@ -104,6 +104,11 @@ public actor AuthSession {
     }
 
     public func restoreSession() async throws -> AuthenticatedSession {
+        if await hasSignedOutTombstone() {
+            // A logout that could not delete its credential must not be
+            // undone by the surviving refresh cookie.
+            throw LibreChatProtocolError.unauthorized
+        }
         if let persisted = await restorePersistedSessionIfStillValid() {
             return persisted
         }
@@ -306,8 +311,6 @@ public actor AuthSession {
         accessToken = session.accessToken
         currentUser = session.user
         credentialRevision &+= 1
-        // A newly installed session supersedes any stale signed-out marker.
-        Self.clearSignedOutTombstone(for: sessionStorageKey)
         if let encoded = try? JSONEncoder().encode(session) {
             persistSession(encoded)
         }
@@ -328,9 +331,22 @@ public actor AuthSession {
         let previous = pendingPersistenceWrite
         let store = secretStore
         let key = sessionStorageKey
+        let supersedesTombstone = Self.isSignedOutTombstoned(for: key)
         pendingPersistenceWrite = Task {
             await previous?.value
-            try? await store.set(encoded, for: key)
+            do {
+                try await store.set(encoded, for: key)
+                // The marker is cleared only once the new session is
+                // durably on disk; a failed write keeps the signed-out
+                // tombstone in force.
+                if supersedesTombstone {
+                    Self.clearSignedOutTombstone(for: key)
+                }
+            } catch {
+                authLog.error(
+                    "Session persistence failed: \(String(describing: error), privacy: .public)"
+                )
+            }
         }
     }
 
@@ -359,6 +375,11 @@ public actor AuthSession {
                 authLog.error(
                     "Persisted session removal failed; tombstoning the session: \(String(describing: error), privacy: .public)"
                 )
+                // The tombstone blocks bearer restore; the surviving refresh
+                // cookie must go too, or the next launch refreshes back in.
+                if clearCookies {
+                    try? await transport.clearCookies()
+                }
                 throw error
             }
         }
@@ -397,6 +418,10 @@ public actor AuthSession {
 
     private static func isSignedOutTombstoned(for key: String) -> Bool {
         FileManager.default.fileExists(atPath: tombstoneURL(for: key).path)
+    }
+
+    private func hasSignedOutTombstone() -> Bool {
+        Self.isSignedOutTombstoned(for: sessionStorageKey)
     }
 
     public func logout() async {

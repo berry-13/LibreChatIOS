@@ -259,7 +259,10 @@ struct SettingsView: View {
     }
 
     private var appLockBinding: Binding<Bool> {
-        Binding(get: { appModel.isAppLockEnabled }, set: { appModel.setAppLockEnabled($0) })
+        Binding(
+            get: { appModel.isAppLockEnabled },
+            set: { newValue in Task { await appModel.setAppLockEnabled(newValue) } }
+        )
     }
 }
 

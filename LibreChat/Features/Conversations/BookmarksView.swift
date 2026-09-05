@@ -266,8 +266,11 @@ private final class BookmarkedConversationListModel {
 
     func reload() async {
         if conversations.isEmpty { state = .loading }
+        listingRevision &+= 1
+        let revision = listingRevision
         do {
             let page = try await repository.bookmarkedConversations(tag: tag, cursor: nil, limit: 25)
+            guard revision == listingRevision else { return }
             conversations = page.conversations
             nextCursor = page.nextCursor
             state = .loaded

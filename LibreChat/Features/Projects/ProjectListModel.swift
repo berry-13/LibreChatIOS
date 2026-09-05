@@ -41,6 +41,9 @@ final class ProjectListModel {
     /// Set when a create request's outcome becomes unknowable after dispatch;
     /// cleared by a successful listing reconciliation in reload().
     private(set) var isCreationOutcomeUnknown = false
+    /// Name submitted by the uncertain create, retained for authoritative
+    /// reconciliation.
+    private var attemptedCreateName: String?
     private(set) var isAssigning = false
     private(set) var updatingIDs: Set<ProjectID> = []
     private(set) var deletingIDs: Set<ProjectID> = []
@@ -86,7 +89,25 @@ final class ProjectListModel {
         // Reloads reconcile the outcome of an uncertain create, but only a
         // reload that actually installed server data counts as proof.
         if state == .loaded, didInstallResponse {
+            reconcileCreationOutcome()
+        }
+    }
+
+    /// An uncertain create is only reconciled when the attempted name is
+    /// observed, or when a complete unfiltered listing proves it absent —
+    /// a filtered or partial page can never rule the create out.
+    private func reconcileCreationOutcome() {
+        guard isCreationOutcomeUnknown else { return }
+        guard let attempted = attemptedCreateName else {
             isCreationOutcomeUnknown = false
+            return
+        }
+        if projects.contains(where: { $0.name == attempted }) {
+            isCreationOutcomeUnknown = false
+            attemptedCreateName = nil
+        } else if nextCursor == nil, normalizedSearchQuery.isEmpty {
+            isCreationOutcomeUnknown = false
+            attemptedCreateName = nil
         }
     }
 
@@ -199,6 +220,7 @@ final class ProjectListModel {
                 break
             }
             if error is CancellationError { isCreationOutcomeUnknown = true }
+            if isCreationOutcomeUnknown { attemptedCreateName = trimmedName }
             await handle(error)
             return nil
         }
@@ -245,6 +267,8 @@ final class ProjectListModel {
                     }
                 )
             )
+            // The confirmed PATCH supersedes refreshes that overlapped it.
+            requestRevision &+= 1
             projects.removeAll { $0.id == id }
             if matchesSearch(project) {
                 projects.append(project)

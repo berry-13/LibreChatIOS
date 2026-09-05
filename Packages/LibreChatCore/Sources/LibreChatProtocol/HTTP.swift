@@ -658,16 +658,21 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
         }
     }
 
+    /// Attachment-upload responses are tiny JSON envelopes; anything larger
+    /// is hostile or misconfigured and must not buffer indefinitely.
+    static let maximumResponseBytes = 16 * 1_048_576
+
     func urlSession(
         _ session: URLSession,
         dataTask: URLSessionDataTask,
         didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
+        let oversized = response.expectedContentLength > Self.maximumResponseBytes
         queue.async {
             self.response = response
         }
-        completionHandler(.allow)
+        completionHandler(oversized ? .cancel : .allow)
     }
 
     func urlSession(
@@ -677,6 +682,11 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
     ) {
         queue.async {
             self.buffer.append(data)
+            guard self.buffer.count <= Self.maximumResponseBytes else {
+                self.buffer.removeAll()
+                dataTask.cancel()
+                return
+            }
         }
     }
 

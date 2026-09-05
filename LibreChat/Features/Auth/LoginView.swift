@@ -8,6 +8,7 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var twoFactorCode = ""
+    @State private var usesBackupCode = false
     @State private var errorMessage: String?
     @State private var presentedSheet: LoginSheet?
     @State private var isShowingServerChange = false
@@ -91,17 +92,25 @@ struct LoginView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     } else {
-                        Text("Enter the code from your authenticator app.")
+                        Text(usesBackupCode
+                             ? "Enter one of your recovery backup codes."
+                             : "Enter the code from your authenticator app.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        TextField("Authentication code", text: $twoFactorCode)
+                        TextField(usesBackupCode ? "Backup code" : "Authentication code", text: $twoFactorCode)
                             .textContentType(.oneTimeCode)
                             .keyboardType(.asciiCapable)
                             .submitLabel(.go)
                             .focused($focusedField, equals: .twoFactor)
                             .onSubmit(verifyTwoFactor)
                             .loginFieldStyle()
+
+                        Button(usesBackupCode ? "Use authenticator app instead" : "Use a backup code instead") {
+                            usesBackupCode.toggle()
+                            errorMessage = nil
+                        }
+                        .font(.subheadline)
                     }
 
                     if let errorMessage {
@@ -455,7 +464,8 @@ struct LoginView: View {
         Task {
             do {
                 try await model.verifyTwoFactor(
-                    code: twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                    code: twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines),
+                    backupCode: usesBackupCode
                 )
             } catch {
                 errorMessage = error.userFacingMessage
