@@ -773,7 +773,10 @@ actor UploadManager: UploadRepository {
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(source) > 0 else { return nil }
 
-        let pixelSizes: [Int] = [0, 2_048, 1_600, 1_280, 1_024, 800, 640, 480]
+        // The first attempt already bounds the decode: pixelSize 0 lets
+        // ImageIO cache the full-resolution bitmap (hundreds of MB on
+        // 48 MP sources) before the bounded attempts run.
+        let pixelSizes: [Int] = [4_096, 2_048, 1_600, 1_280, 1_024, 800, 640, 480]
         let qualities: [Double] = [0.85, 0.7, 0.55, 0.4, 0.3]
         for pixelSize in pixelSizes {
             var options: [CFString: Any] = [

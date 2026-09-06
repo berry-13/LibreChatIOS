@@ -811,12 +811,14 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await outgoingRuntime?.repository.detachActiveStreams()
+        // Ownership must be revalidated after every suspension and before
+        // each global assignment: a superseded transition must never clear
+        // the newly selected session's runtime or manager.
+        guard transitionEpoch == profileSelectionEpoch else { return }
         activeRuntime = nil
         await outgoingUploadManager?.resetAfterCachePurge()
-        uploadManager = nil
-        // A concurrent profile selection owns the shared state after either
-        // suspension; this superseded transition must not clear it.
         guard transitionEpoch == profileSelectionEpoch else { return }
+        uploadManager = nil
         selectedServer = nil
         authenticationState = .needsServer
         compatibility = nil
@@ -925,9 +927,12 @@ final class AppModel {
         AppLog.generation.info("Application became inactive; checkpointing and detaching generation streams.")
         cancelGenerationRecovery()
         generationRecoverySignal = nil
-        await activeRuntime?.repository.detachActiveStreams()
-        // A foregrounding that arrived while teardown was suspended owns the
-        // fresh recovery; the stale teardown must not cancel its streams.
+        // The validating closure is checked at the repository's
+        // post-checkpoint cancellation boundary — after the await that could
+        // have been superseded by a foreground recovery.
+        await activeRuntime?.repository.detachActiveStreams(
+            validating: { [weak self] in self?.lifecycleGeneration == generation }
+        )
         if let generation, generation != lifecycleGeneration { return }
     }
 
@@ -1143,11 +1148,17 @@ final class AppModel {
         authenticationState = .authenticated(user)
     }
 
-    func recordMemoriesEnabled(_ enabled: Bool) async {
-        guard var user else { return }
+    func recordMemoriesEnabled(
+        _ enabled: Bool,
+        profileID: ServerProfileID?,
+        accountID: AccountID?
+    ) async {
+        guard var user, let selectedServer else { return }
+        // A preference callback from a superseded profile must not corrupt
+        // the active account's record.
+        guard selectedServer.id == profileID, user.id == accountID else { return }
         user.memoriesEnabled = enabled
         authenticationState = .authenticated(user)
-        guard let selectedServer else { return }
         try? await dependencies.cache.saveAccount(profileID: selectedServer.id, account: user)
     }
 

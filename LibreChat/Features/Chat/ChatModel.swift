@@ -3498,6 +3498,17 @@ final class ChatModel {
     func replaceUnsentDraft(with newConversation: LibreChatDomain.Conversation) {
         guard conversation.id != newConversation.id, messages.isEmpty else { return }
         let previousID = conversation.id
+        // The typed draft must follow the identity: the manifest moves with
+        // the canvas, so text left under the old key becomes unreachable.
+        let carriedDraft = draft
+        if !carriedDraft.isEmpty {
+            let repository = self.repository
+            Task {
+                await repository.saveDraft(carriedDraft, conversationID: newConversation.id)
+                await repository.saveDraft("", conversationID: previousID)
+            }
+        }
+        draftTask?.cancel()
         conversation = newConversation
         // A canvas draft has no server identity to verify: its reviewed target
         // from the target catalog is authoritative from birth, exactly like a

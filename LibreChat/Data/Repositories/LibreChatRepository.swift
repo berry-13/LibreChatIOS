@@ -1206,6 +1206,19 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             guard group.productionVersionID == version.id else {
                 throw PromptManagementError.outcomeUnknown
             }
+            // A valid-but-foreign echo must not confirm a one-shot create:
+            // the returned record has to match what was submitted.
+            func normalized(_ value: String) -> String {
+                value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let submittedCommand = normalized(input.command ?? "")
+            guard normalized(group.name) == normalized(input.name),
+                  normalized(group.summary) == normalized(input.summary),
+                  normalized(group.command ?? "") == submittedCommand,
+                  normalized(version.text) == normalized(input.text),
+                  version.kind == input.kind else {
+                throw PromptManagementError.outcomeUnknown
+            }
             return PromptManagementDetail(group: group, versions: [version])
         } catch is CancellationError {
             throw PromptManagementError.outcomeUnknown
@@ -5280,10 +5293,17 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         )
     }
 
-    func detachActiveStreams() async {
+    func detachActiveStreams(validating: (@MainActor @Sendable () -> Bool)? = nil) async {
         fileTransferEpoch &+= 1
         let activeStreamCount = activeStreamTasks.count
         await checkpointActiveGenerations()
+        // The checkpoint is the suspension point: a lifecycle transition
+        // that foregrounded the app during it owns the fresh recovery, so
+        // the destructive cancellation must not run.
+        if let validating, !(await validating()) {
+            AppLog.generation.info("Stream detach superseded by a newer lifecycle; streams kept.")
+            return
+        }
         activeStreamTasks.values.forEach { $0.cancel() }
         activeStreamTasks.removeAll()
         AppLog.generation.info(
@@ -5706,7 +5726,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             // Recovery is best-effort: an unreachable status probe only means
             // the fast path is unavailable, so the failure is logged and the
             // caller falls back to the slower reconciliation path.
-            AppLog.generation.debug("Settled-history recovery probe failed; falling back. \(error.localizedDescription, privacy: .public)")
+            AppLog.generation.debug("Settled-history recovery probe failed; falling back.")
         }
         return nil
     }
