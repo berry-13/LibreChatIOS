@@ -1596,27 +1596,38 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             originComponents.host = components.host
             originComponents.port = components.port
             originComponents.path = "/"
-            let response = try await runtime.restClient.downloadResponse(
-                method: .get,
-                path: path,
-                // The transport escapes query items itself; handing over the
-                // percent-encoded form would double-escape signature
-                // parameters and break authenticated image fetches.
-                queryItems: components.queryItems ?? [],
-                authorized: true,
-                baseURL: pathEscapesDeploymentBase ? originComponents.url : nil,
-                byteLimit: maximumImageBytes
-            )
-            defer { try? FileManager.default.removeItem(at: response.localURL) }
-            let byteCount = ((try? FileManager.default.attributesOfItem(
-                atPath: response.localURL.path
-            ))?[.size] as? NSNumber)?.intValue ?? 0
-            guard byteCount <= maximumImageBytes else {
-                throw LibreChatProtocolError.unsupported(
-                    "That image is too large to display (\(byteCount) bytes)."
+            func fetch(authorized: Bool, originBase: URL?) async throws -> Data {
+                let response = try await runtime.restClient.downloadResponse(
+                    method: .get,
+                    path: path,
+                    // The transport escapes query items itself; handing over
+                    // the percent-encoded form would double-escape signature
+                    // parameters and break authenticated image fetches.
+                    queryItems: components.queryItems ?? [],
+                    authorized: authorized,
+                    baseURL: originBase,
+                    byteLimit: maximumImageBytes
                 )
+                defer { try? FileManager.default.removeItem(at: response.localURL) }
+                let byteCount = ((try? FileManager.default.attributesOfItem(
+                    atPath: response.localURL.path
+                ))?[.size] as? NSNumber)?.intValue ?? 0
+                guard byteCount <= maximumImageBytes else {
+                    throw LibreChatProtocolError.unsupported(
+                        "That image is too large to display (\(byteCount) bytes)."
+                    )
+                }
+                return try Data(contentsOf: response.localURL)
             }
-            return try Data(contentsOf: response.localURL)
+            let originBase: URL? = pathEscapesDeploymentBase ? originComponents.url : nil
+            // Bearer middleware deployments need the header; cookie-only and
+            // anonymous share-file deployments reject it — retry anonymously.
+            do {
+                return try await fetch(authorized: true, originBase: originBase)
+            } catch LibreChatProtocolError.httpStatus(401, _, _),
+                    LibreChatProtocolError.httpStatus(403, _, _) {
+                return try await fetch(authorized: false, originBase: originBase)
+            }
         }
         // External URLs stream through the same byte cap — but enforced
         // while bytes arrive, so a hostile origin cannot fill temporary
@@ -2786,12 +2797,18 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             URLQueryItem(name: "tags", value: tag)
         ]
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        // Capture the owning account BEFORE dispatch: a same-profile account
+        // replacement during the request must not receive A's conversations
+        // into B's cache namespace.
+        let accountID = try activeAccountID()
         let page = try await runtime.restClient.send(APIRequest<LibreChatConversationPageDTO>(
             path: "api/convos",
             queryItems: query,
             retryPolicy: .idempotent(maximumAttempts: 2)
         )).domainModel()
-        let accountID = try activeAccountID()
+        guard try activeAccountID() == accountID else {
+            throw LibreChatProtocolError.invalidResponse
+        }
         try await cache.save(
             page: page,
             profileID: profile.id,

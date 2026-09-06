@@ -61,6 +61,15 @@ final class SharedSnapshotModel {
         } catch {
             guard !(error is CancellationError) else { return }
             guard epoch == loadEpoch else { return }
+            // The snapshot endpoint is anonymous (.none authorization): a
+            // 401 says the share is unavailable or restricted, NOT that the
+            // signed-in viewer's session expired — never clear the session.
+            if let protocolError = error as? LibreChatProtocolError,
+               case .httpStatus(401, _, _) = protocolError {
+                snapshot = nil
+                state = .failed("This shared snapshot is unavailable or requires authentication on the web.")
+                return
+            }
             if error.isUnauthorized { await onUnauthorized() }
             snapshot = nil
             forkUnavailableReason = nil
