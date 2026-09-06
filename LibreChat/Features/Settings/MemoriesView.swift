@@ -19,7 +19,15 @@ struct MemoriesView: View {
             memoriesEnabled: appModel.user?.memoriesEnabled ?? true,
             isOffline: { appModel.isOffline },
             onUnauthorized: appModel.expireSessionCallback(),
-            onPreferenceChanged: { await appModel.recordMemoriesEnabled($0) }
+            onPreferenceChanged: { enabled in
+                let profileID = appModel.selectedServer?.id
+                let accountID = appModel.user?.id
+                await appModel.recordMemoriesEnabled(
+                    enabled,
+                    profileID: profileID,
+                    accountID: accountID
+                )
+            }
         ))
     }
 

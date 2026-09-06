@@ -204,6 +204,9 @@ actor VoiceCaptureSession: VoiceCaptureServicing {
             )
             recorder.isMeteringEnabled = true
             guard recorder.prepareToRecord(), recorder.record(forDuration: Self.maximumDuration) else {
+                // The destination file exists the moment the recorder is
+                // constructed; a failed start must not leave it behind.
+                try? FileManager.default.removeItem(at: url)
                 throw VoiceCaptureError.couldNotStart
             }
             active = ActiveCapture(

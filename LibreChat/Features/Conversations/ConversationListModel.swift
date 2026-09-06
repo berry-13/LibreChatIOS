@@ -714,9 +714,10 @@ final class ConversationListModel {
     /// list once; failures roll the optimistic change back.
     func toggleFavorite(_ option: ChatTargetOption) async {
         guard let identity = favoriteIdentity(of: option) else { return }
-        // Queued mutations are always based on the last confirmed list, so a
-        // chain failure rolls every optimistic edit back coherently.
-        let previous = confirmedFavorites.isEmpty ? favorites : confirmedFavorites
+        // Each queued replacement is based on the current optimistic list so
+        // pending edits are never dropped; a chain failure rolls everything
+        // back to the last confirmed list.
+        let previous = favorites
         var updated = previous
         if let index = updated.firstIndex(of: identity) {
             updated.remove(at: index)
@@ -746,8 +747,9 @@ final class ConversationListModel {
         } catch is CancellationError {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
-            favorites = previous
-            confirmedFavorites = previous
+            // Roll back to the last server-confirmed list: a failed chained
+            // write may have committed its own predecessor only.
+            favorites = confirmedFavorites
             reportOperationError(error.userFacingMessage)
         }
     }

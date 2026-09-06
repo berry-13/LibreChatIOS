@@ -274,6 +274,7 @@ private struct SecuritySettingsPage: View {
     @State private var accountProof = ""
     @State private var usesBackupCode = false
     @State private var backupCodes: [String] = []
+    @State private var isRegeneratingBackupCodes = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -337,9 +338,14 @@ private struct SecuritySettingsPage: View {
                     .keyboardType(usesBackupCode ? .asciiCapable : .numberPad)
 
                 Button("Regenerate backup codes") {
-                    perform { backupCodes = try await appModel.regenerateBackupCodes(proof: selectedProof) }
+                    guard !isRegeneratingBackupCodes else { return }
+                    isRegeneratingBackupCodes = true
+                    Task {
+                        defer { isRegeneratingBackupCodes = false }
+                        perform { backupCodes = try await appModel.regenerateBackupCodes(proof: selectedProof) }
+                    }
                 }
-                .disabled(accountProof.isEmpty)
+                .disabled(accountProof.isEmpty || isRegeneratingBackupCodes)
                 Button("Disable two-factor authentication", role: .destructive) {
                     perform {
                         try await appModel.disableTwoFactor(proof: selectedProof)

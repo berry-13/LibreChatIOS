@@ -133,7 +133,10 @@ public enum LibreChatSharedLinksAPI {
     ) throws -> APIRequest<SharedLinkMutationResponseDTO> {
         try APIRequest(
             method: .post,
+            // The conversation id is server data; the component form is
+            // encoded once and rejects dot-only traversal values.
             path: "api/share/\(conversationID.rawValue)",
+            pathComponents: ["api", "share", conversationID.rawValue],
             body: request,
             retryPolicy: .never
         )
