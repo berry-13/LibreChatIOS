@@ -1624,8 +1624,12 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             // anonymous share-file deployments reject it — retry anonymously.
             do {
                 return try await fetch(authorized: true, originBase: originBase)
-            } catch LibreChatProtocolError.httpStatus(401, _, _),
-                    LibreChatProtocolError.httpStatus(403, _, _) {
+            } catch let LibreChatProtocolError.httpStatus(status, _, _)
+                    where status == 401 || status == 403 {
+                return try await fetch(authorized: false, originBase: originBase)
+            } catch LibreChatProtocolError.unauthorized {
+                // Signed-out viewers have no credential at all: the initial
+                // authorized attempt fails before any request is sent.
                 return try await fetch(authorized: false, originBase: originBase)
             }
         }
@@ -1703,11 +1707,23 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         let request = try LibreChatProjectsAPI.update(id: id, input: input)
         let project = try await runtime.restClient.send(request).domainModel()
         // A stale or foreign 2xx payload must never replace the edited
-        // project in local state.
+        // project in local state: the id must match and every submitted
+        // field must be echoed.
         guard project.id == id else {
             throw LibreChatProtocolError.invalidResponse
         }
+        if let name = input.name, project.name != name {
+            throw LibreChatProtocolError.invalidResponse
+        }
+        if let description = input.description,
+           normalizedOptional(project.description) != normalizedOptional(description) {
+            throw LibreChatProtocolError.invalidResponse
+        }
         return project
+    }
+
+    private func normalizedOptional(_ value: String?) -> String {
+        (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func deleteProject(id: ProjectID) async throws -> DeleteChatProjectResult {

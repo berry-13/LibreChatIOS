@@ -1367,8 +1367,14 @@ public actor RESTClient {
     }
 
     private static func retryAfter(_ headers: [String: String]) -> TimeInterval? {
-        headers.first { $0.key.caseInsensitiveCompare("Retry-After") == .orderedSame }
-            .flatMap { TimeInterval($0.value) }
+        // Server-controlled values can be non-numeric or absurd ("1e309");
+        // clamp here so downstream Int(...) conversions can never trap.
+        guard let raw = headers.first(where: {
+            $0.key.caseInsensitiveCompare("Retry-After") == .orderedSame
+        })?.value, let seconds = TimeInterval(raw), seconds.isFinite else {
+            return nil
+        }
+        return min(max(seconds, 0), 86_400)
     }
 
     private static func boundedRetryDelay(

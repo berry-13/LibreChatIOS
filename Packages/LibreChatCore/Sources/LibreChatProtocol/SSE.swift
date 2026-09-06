@@ -168,7 +168,13 @@ public actor URLSessionEventStreamTransport: EventStreamTransport {
     }
 
     private static func retryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
-        response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+        // Clamp server-controlled values so downstream Int conversions
+        // cannot trap on absurd values like 1e309.
+        guard let raw = response.value(forHTTPHeaderField: "Retry-After"),
+              let seconds = TimeInterval(raw), seconds.isFinite else {
+            return nil
+        }
+        return min(max(seconds, 0), 86_400)
     }
 
     /// Mirrors `AuthSession.isBrowserLoginRedirect`: LibreChat's sign-in page

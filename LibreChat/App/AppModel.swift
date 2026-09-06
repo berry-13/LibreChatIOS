@@ -791,7 +791,8 @@ final class AppModel {
         // newly selected session's state. The stale sign-out owned the busy
         // flag; abandoning it must release that flag or the setup screen
         // stays disabled.
-        guard selectionEpoch == profileSelectionEpoch else {
+        guard selectionEpoch == profileSelectionEpoch,
+              self.selectedServer?.accountIdentifier == originatingAccountID else {
             isWorking = false
             return
         }
@@ -835,14 +836,17 @@ final class AppModel {
         // A late 401 raised by a profile or account the user already switched
         // away from must never tear down the newly selected session.
         if let originatingProfileID, originatingProfileID != selectedServer.id { return }
-        if let originatingAccountID, selectedServer.accountIdentifier != originatingAccountID { return }
+        // Unbound callers (plain 401s) bind to the account that was current
+        // at entry; bound callers keep their captured coordinate.
+        let effectiveAccountID = originatingAccountID ?? selectedServer.accountIdentifier
+        if let effectiveAccountID, selectedServer.accountIdentifier != effectiveAccountID { return }
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await expiringRuntime.repository.detachActiveStreams()
         // Ownership can also change across this suspension.
-        guard selectedServer.accountIdentifier == originatingAccountID else { return }
+        guard selectedServer.accountIdentifier == effectiveAccountID else { return }
         try? await expiringRuntime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
-        guard selectedServer.accountIdentifier == originatingAccountID else { return }
+        guard selectedServer.accountIdentifier == effectiveAccountID else { return }
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
             UnsentCanvasManifestStore.removeAll(
@@ -925,6 +929,7 @@ final class AppModel {
         // cancelled performUpload would otherwise recreate rows after the
         // purge, and in-flight requests could continue through it.
         await purgeUploadManager?.resetAfterCachePurge()
+        let originatingAccountID = purgeProfile.accountIdentifier
         do {
             try await dependencies.cache.purge(
                 profileID: purgeProfile.id,
@@ -932,8 +937,10 @@ final class AppModel {
             )
             // Only the originating profile's namespace was purged; a scene
             // that switched profiles mid-purge must keep its own uploads and
-            // in-memory state untouched.
-            guard selectionEpoch == profileSelectionEpoch else { return }
+            // in-memory state untouched. Account replacement on the same
+            // profile does not advance the epoch, hence the explicit check.
+            guard selectionEpoch == profileSelectionEpoch,
+                  purgeProfile.accountIdentifier == originatingAccountID else { return }
             await purgeRuntime.repository.resetInMemoryState()
             cacheEpoch = UUID()
             notice = "Saved cache cleared. LibreChat will reload this server's current data."
@@ -1012,14 +1019,18 @@ final class AppModel {
     }
 
     func applicationBecameActive(lifecycleGeneration generation: Int? = nil) async {
-        isApplicationActive = true
+        // A stale active callback (superseded by a later resignation) must
+        // not mark the app active or restart work.
         guard generation == nil || generation == lifecycleGeneration else { return }
+        isApplicationActive = true
         // SQLite can recreate -wal/-shm sidecars after the one-shot
         // exclusion; re-apply it on every activation so replacements never
         // stay backup-eligible.
         AppDependencies.excludePrivateDataFromBackups(storeURL: AppDependencies.defaultCacheStoreURL)
         guard phase == .signedIn, !isOffline, let repository = activeRuntime?.repository else { return }
         await uploadManager?.applicationBecameActive()
+        // Re-check: the upload-manager round-trip is a suspension point.
+        guard generation == nil || generation == lifecycleGeneration else { return }
         AppLog.generation.info("Application became active; starting generation reconciliation.")
         startGenerationRecovery(
             repository: repository,
@@ -1399,7 +1410,8 @@ final class AppModel {
             await invalidateSession(
                 for: profile,
                 runtime: runtime,
-                selectionEpoch: selectionEpoch
+                selectionEpoch: selectionEpoch,
+                originatingAccountID: originatingAccountID
             )
         } catch {
             guard selectionEpoch == profileSelectionEpoch,
@@ -1585,15 +1597,19 @@ final class AppModel {
     private func invalidateSession(
         for profile: ServerProfile,
         runtime: ProfileRuntime,
-        selectionEpoch: Int
+        selectionEpoch: Int,
+        originatingAccountID: AccountID? = nil
     ) async {
         try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
         generationRecoverySignal = nil
         if let accountID = profile.accountIdentifier {
             await hideCache(profileID: profile.id, accountID: accountID)
         }
+        // A same-profile account replacement across these suspensions owns
+        // the shared session; the stale invalidation must not sign it out.
         guard selectionEpoch == profileSelectionEpoch,
-              selectedServer?.id == profile.id else { return }
+              selectedServer?.id == profile.id,
+              selectedServer?.accountIdentifier == profile.accountIdentifier else { return }
         authenticationState = .signedOut(profile.id)
         phase = .signedOut
     }

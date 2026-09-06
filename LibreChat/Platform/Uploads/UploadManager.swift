@@ -49,6 +49,18 @@ actor UploadManager: UploadRepository {
                 )
                 continue
             }
+            // Terminal records whose ownership transferred to a sent message
+            // are history, not pending work — prune them so the cache and
+            // in-memory dictionary don't grow with the attachment history.
+            if upload.state == .attached {
+                try? FileManager.default.removeItem(at: upload.localURL)
+                try? await cache.removeUpload(
+                    id: upload.id,
+                    profileID: profileID,
+                    accountID: accountID
+                )
+                continue
+            }
             if upload.state == .uploading {
                 // The pre-launch dispatch may already have committed
                 // server-side; only never-dispatched staged records may be

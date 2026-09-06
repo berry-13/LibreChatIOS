@@ -60,6 +60,11 @@ struct ChatView: View {
 
     /// Decodes a photo asset through a pixel-limited CGImageSource so huge
     /// ProRAW/panorama sources never allocate their full decompressed size.
+    private static func isMultiFrame(at url: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        return CGImageSourceGetCount(source) > 1
+    }
+
     private static func boundedDownsampledImageData(
         at url: URL,
         limit: Int,
@@ -897,6 +902,18 @@ struct ChatView: View {
                     // materializing the complete asset as raw data.
                     guard let asset = try await item.loadTransferable(type: PhotoAssetFile.self) else { return }
                     defer { try? FileManager.default.removeItem(at: asset.url) }
+                    // Animated (multi-frame) sources stage their original
+                    // bounded bytes so UploadManager's multi-frame
+                    // preservation path sees them intact.
+                    if Self.isMultiFrame(at: asset.url) {
+                        let data = try Self.boundedFileData(at: asset.url, limit: Self.maximumImportedFileBytes)
+                        try await model.attach(
+                            data: data,
+                            filename: asset.url.lastPathComponent,
+                            mimeType: nil
+                        )
+                        return
+                    }
                     let data = try Self.boundedDownsampledImageData(
                         at: asset.url,
                         limit: Self.maximumImportedFileBytes,
