@@ -61,6 +61,7 @@ final class UserKeysModel {
         } catch is CancellationError {
             return
         } catch {
+            guard revision == refreshRevision else { return }
             await handle(error, clearCatalog: true)
         }
     }

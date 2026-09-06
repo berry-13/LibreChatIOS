@@ -209,6 +209,18 @@ actor UploadManager: UploadRepository {
             try? FileManager.default.removeItem(at: localURL)
             throw error
         }
+        // The cache write suspends: a session switch during it invalidates
+        // this staging attempt, and enqueueing would use the old runtime.
+        guard stageEpoch == sessionEpoch else {
+            uploadsByID.removeValue(forKey: id)
+            try? FileManager.default.removeItem(at: localURL)
+            try? await cache.removeUpload(
+                id: id,
+                profileID: profileID,
+                accountID: accountID
+            )
+            throw LibreChatProtocolError.unsupported("That attachment belonged to a previous session. Attach it again.")
+        }
         publish()
         try await enqueue(upload)
         return upload

@@ -122,7 +122,10 @@ public enum LibreChatSharedLinksAPI {
         conversationID: ConversationID
     ) -> APIRequest<SharedLinkLookupDTO> {
         APIRequest(
+            // The conversation id is server data; the component form is
+            // encoded once and rejects dot-only traversal values.
             path: "api/share/link/\(conversationID.rawValue)",
+            pathComponents: ["api", "share", "link", conversationID.rawValue],
             retryPolicy: .idempotent(maximumAttempts: 2)
         )
     }

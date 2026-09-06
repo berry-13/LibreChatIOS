@@ -70,6 +70,9 @@ final class ConversationListModel {
     private var listingRevision = 0
     /// Whole-list favorite replacements run strictly one at a time.
     private var favoritesMutationChain: Task<[ChatFavorite], Error>?
+    /// Monotonic sequence for queued replacements; only the newest may
+    /// install into the visible list.
+    private var favoritesMutationSequence = 0
     /// The last list the server confirmed; optimistic edits roll back to it.
     private var confirmedFavorites: [ChatFavorite] = []
     /// Invoked when a draft canvas is discarded so its staged attachments
@@ -283,9 +286,11 @@ final class ConversationListModel {
             duplicationUncertainIDs.removeAll()
             state = .loaded
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard !(error is CancellationError) else { return }
+            // A superseded request's 401 must not sign out the session that
+            // replaced it.
             guard revision == listingRevision else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             state = conversations.isEmpty ? .failed(error.userFacingMessage) : .loaded
             paginationError = conversations.isEmpty ? nil : "Couldn’t refresh. Showing saved conversations."
             isShowingCache = !conversations.isEmpty
@@ -312,15 +317,16 @@ final class ConversationListModel {
             freshness = page.fetchedAt
             paginationError = nil
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard !(error is CancellationError) else { return }
             guard revision == listingRevision else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             paginationError = error.userFacingMessage
         }
     }
 
     func delete(_ conversation: LibreChatDomain.Conversation) async {
-        unregisterUnsentCanvas(conversation.id)
+        // Admission checks come first: unregistering the canvas manifest
+        // before the deletion is admitted would strand its saved draft text.
         guard activeOperationID == nil else { return }
         guard !isOffline() || conversation.id.isLocalDraft else {
             paginationError = "Deleting conversations is unavailable offline."
@@ -333,6 +339,7 @@ final class ConversationListModel {
             try await repository.delete(id: conversation.id)
             // The confirmed DELETE supersedes listings captured before it.
             listingRevision &+= 1
+            unregisterUnsentCanvas(conversation.id)
             conversations.removeAll { $0.id == conversation.id }
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
@@ -739,11 +746,18 @@ final class ConversationListModel {
             _ = try? await previousChain?.value
             return try await repository.replaceChatFavorites(updated)
         }
+        favoritesMutationSequence &+= 1
+        let sequence = favoritesMutationSequence
         favoritesMutationChain = replacement
         do {
             let confirmed = try await replacement.value
+            // The response is always the new rollback baseline, but only the
+            // newest queued write may install into the visible list — an
+            // older completion would drop a later toggle.
             confirmedFavorites = confirmed
-            favorites = confirmed
+            if sequence == favoritesMutationSequence {
+                favorites = confirmed
+            }
         } catch is CancellationError {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }

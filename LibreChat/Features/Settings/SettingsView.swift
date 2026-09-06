@@ -341,8 +341,15 @@ private struct SecuritySettingsPage: View {
                     guard !isRegeneratingBackupCodes else { return }
                     isRegeneratingBackupCodes = true
                     Task {
+                        // The flag must span the actual network request, not
+                        // just the scheduling of it.
                         defer { isRegeneratingBackupCodes = false }
-                        perform { backupCodes = try await appModel.regenerateBackupCodes(proof: selectedProof) }
+                        errorMessage = nil
+                        do {
+                            backupCodes = try await appModel.regenerateBackupCodes(proof: selectedProof)
+                        } catch {
+                            errorMessage = error.userFacingMessage
+                        }
                     }
                 }
                 .disabled(accountProof.isEmpty || isRegeneratingBackupCodes)
@@ -656,8 +663,14 @@ private struct AccountProfileView: View {
             selectedPhoto = nil
         }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self),
-                  let mimeType = Self.avatarMIMEType(data) else {
+            var data = try await item.loadTransferable(type: Data.self)
+            // Library photos commonly arrive as HEIC/HEIF; the upload
+            // contract accepts PNG and JPEG, so transcode those sources to
+            // JPEG (pixel-limited) before the format validation.
+            if data != nil, Self.avatarMIMEType(data!) == nil {
+                data = try Self.jpegTranscoded(data!)
+            }
+            guard let data, let mimeType = Self.avatarMIMEType(data) else {
                 throw AccountProfileError.unsupportedAvatarFormat
             }
             _ = try await appModel.uploadAccountAvatar(
@@ -670,6 +683,28 @@ private struct AccountProfileView: View {
         } catch {
             errorMessage = error.userFacingMessage
         }
+    }
+
+    /// Re-encodes unsupported source formats (HEIC/HEIF) as JPEG through a
+    /// pixel-limited ImageIO decode.
+    private static func jpegTranscoded(_ data: Data, maxPixel: Int = 4_096) throws -> Data {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(
+                  source,
+                  0,
+                  [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                  ] as CFDictionary
+              ) else {
+            throw AccountProfileError.unsupportedAvatarFormat
+        }
+        let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.9)
+        guard let jpeg, !jpeg.isEmpty else {
+            throw AccountProfileError.unsupportedAvatarFormat
+        }
+        return jpeg
     }
 
     private static func avatarMIMEType(_ data: Data) -> String? {
