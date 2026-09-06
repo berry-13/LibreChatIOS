@@ -270,6 +270,9 @@ final class ConversationListModel {
             guard revision == listingRevision else { return }
             let refreshedIDs = Set(page.conversations.map(\.id))
             liveRefreshArrived = true
+            // Seed pagination authority: later pages only add their own ids,
+            // so the traversal set must already know the first page's.
+            authoritativeIDs = refreshedIDs
             if page.nextCursor == nil {
                 // The final page makes the server listing authoritative:
                 // conversations deleted or archived by another client must

@@ -202,6 +202,7 @@ struct ConversationListView: View {
     private func renameProject(_ project: ChatProject, to name: String) async {
         guard let repository = appModel.repository, !appModel.isOffline else { return }
         let originatingProfileID = appModel.selectedServer?.id
+        let originatingAccountID = appModel.user?.id
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
@@ -212,12 +213,16 @@ struct ConversationListView: View {
         } catch is CancellationError {
             return
         } catch {
-            if error.isUnauthorized { await appModel.expireSession(for: originatingProfileID) }
+            if error.isUnauthorized { await appModel.expireSession(
+                for: originatingProfileID,
+                originatingAccountID: originatingAccountID
+            ) }
         }
         await menuDirectories.load(
             repository: appModel.repository,
             isOffline: appModel.isOffline,
             canUseBookmarks: appModel.canUseBookmarks,
+            canUseProjects: appModel.canUseProjects,
             onUnauthorized: appModel.expireSessionCallback()
         )
     }
@@ -225,13 +230,17 @@ struct ConversationListView: View {
     private func deleteProject(_ project: ChatProject) async {
         guard let repository = appModel.repository, !appModel.isOffline else { return }
         let originatingProfileID = appModel.selectedServer?.id
+        let originatingAccountID = appModel.user?.id
         do {
             _ = try await repository.deleteProject(id: project.id)
             expandedProjectIDs.remove(project.id)
         } catch is CancellationError {
             return
         } catch {
-            if error.isUnauthorized { await appModel.expireSession(for: originatingProfileID) }
+            if error.isUnauthorized { await appModel.expireSession(
+                for: originatingProfileID,
+                originatingAccountID: originatingAccountID
+            ) }
         }
         // The dropped project's chats are unassigned server-side; refresh
         // both the directory and the list so its rows and nested chats leave.
@@ -239,6 +248,7 @@ struct ConversationListView: View {
             repository: appModel.repository,
             isOffline: appModel.isOffline,
             canUseBookmarks: appModel.canUseBookmarks,
+            canUseProjects: appModel.canUseProjects,
             onUnauthorized: appModel.expireSessionCallback()
         )
         await model.reload()
@@ -466,6 +476,7 @@ struct ConversationListView: View {
                 repository: appModel.repository,
                 isOffline: appModel.isOffline,
                 canUseBookmarks: appModel.canUseBookmarks,
+                canUseProjects: appModel.canUseProjects,
                 onUnauthorized: appModel.expireSessionCallback()
             )
         }
@@ -635,14 +646,16 @@ struct ConversationListView: View {
     /// the compact "+" beside the section label.
     @ViewBuilder
     private var projectsSection: some View {
-        Section {
-            projectsSectionHeader
-        }
-        .listSectionSeparator(.hidden)
+        if appModel.canUseProjects {
+            Section {
+                projectsSectionHeader
+            }
+            .listSectionSeparator(.hidden)
 
-        Section {
-            ForEach(menuDirectories.projects) { project in
-                projectRow(project)
+            Section {
+                ForEach(menuDirectories.projects) { project in
+                    projectRow(project)
+                }
             }
         }
     }
@@ -654,6 +667,7 @@ struct ConversationListView: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
             Button {
+                guard appModel.canUseProjects else { return }
                 isShowingProjects = true
             } label: {
                 Image(systemName: "plus")
@@ -715,7 +729,8 @@ struct ConversationListView: View {
             .buttonStyle(.plain)
             .contextMenu {
                 Button("Open project", systemImage: "folder") {
-                    isShowingProjects = true
+                    guard appModel.canUseProjects else { return }
+                isShowingProjects = true
                 }
                 Button("New chat in project", systemImage: "square.pencil") {
                     Task { await startNewChatInProject(project) }
@@ -809,6 +824,7 @@ struct ConversationListView: View {
         }
         if conversations.count > 8 {
             Button {
+                guard appModel.canUseProjects else { return }
                 isShowingProjects = true
             } label: {
                 Text("Show all")
@@ -2305,16 +2321,21 @@ final class ConversationMenuDirectories {
         repository: LibreChatRepository?,
         isOffline: Bool,
         canUseBookmarks: Bool,
+        canUseProjects: Bool,
         onUnauthorized: @MainActor () async -> Void
     ) async {
         guard let repository, !isOffline else { return }
-        async let projectsPage = repository.projects(options: ChatProjectListOptions(
-            cursor: nil,
-            limit: 100,
-            sortBy: .name,
-            sortDirection: .ascending,
-            search: nil
-        ))
+        // Projects are capability-gated: deployments without the feature must
+        // not receive /api/projects requests from mere menu preloading.
+        async let projectsPage: ChatProjectPage? = canUseProjects
+            ? repository.projects(options: ChatProjectListOptions(
+                cursor: nil,
+                limit: 100,
+                sortBy: .name,
+                sortDirection: .ascending,
+                search: nil
+            ))
+            : nil
         async let loadedTags = canUseBookmarks
             ? repository.conversationTags().sorted {
                 if $0.position != $1.position { return $0.position < $1.position }
@@ -2323,9 +2344,10 @@ final class ConversationMenuDirectories {
             : []
 
         do {
-            let page = try await projectsPage
-            projects = page.projects.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            if let page = try await projectsPage {
+                projects = page.projects.sorted {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
             }
         } catch is CancellationError {
         } catch {

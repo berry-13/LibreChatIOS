@@ -5510,7 +5510,10 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         protocolVersion: Int
     ) async throws -> GenerationStatusDTO {
         let request = APIRequest<GenerationStatusDTO>(
+            // The conversation id is server data; the component form is
+            // encoded exactly once and rejects dot-only traversal values.
             path: "api/agents/chat/status/\(conversationID.rawValue)",
+            pathComponents: ["api", "agents", "chat", "status", conversationID.rawValue],
             queryItems: [URLQueryItem(name: "generationProtocolVersion", value: String(protocolVersion))],
             headers: [Self.generationProtocolHeader: String(protocolVersion)],
             retryPolicy: .idempotent(maximumAttempts: 2)

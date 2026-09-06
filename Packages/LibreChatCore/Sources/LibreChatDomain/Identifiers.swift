@@ -246,6 +246,20 @@ public struct SharedFileID: LibreChatIdentifier {
     public init(rawValue: String) {
         self.rawValue = rawValue
     }
+
+    /// Dot-only values normalize to a parent route once interpolated into
+    /// `/api/share/:share/files/:file` access paths.
+    public var isSafePathComponent: Bool {
+        guard (1...256).contains(rawValue.utf8.count) else { return false }
+        guard rawValue != ".", rawValue != ".." else { return false }
+        return rawValue.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 48...57, 65...90, 97...122: true
+            case 45, 46, 95, 126: true // - . _ ~
+            default: false
+            }
+        }
+    }
 }
 
 public struct ServerProfileID: LibreChatIdentifier {
