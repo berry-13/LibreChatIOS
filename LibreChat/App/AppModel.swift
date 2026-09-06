@@ -765,6 +765,7 @@ final class AppModel {
 
     func signOut() async {
         guard let selectedServer, let signingOutRuntime = activeRuntime else { return }
+        let originatingAccountID = selectedServer.accountIdentifier
         let selectionEpoch = profileSelectionEpoch
         ServerEntityImageStore.removeAllCachedImages()
         FileImagePreviewStore.removeAllCachedImages()
@@ -772,6 +773,12 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await signingOutRuntime.repository.detachActiveStreams()
+        // A same-profile account replacement during the detach suspension
+        // owns the shared session; the stale sign-out must not log it out.
+        guard selectedServer.accountIdentifier == originatingAccountID else {
+            isWorking = false
+            return
+        }
         await signingOutRuntime.protocolRuntime.authSession.logout()
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
@@ -832,7 +839,10 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await expiringRuntime.repository.detachActiveStreams()
+        // Ownership can also change across this suspension.
+        guard selectedServer.accountIdentifier == originatingAccountID else { return }
         try? await expiringRuntime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        guard selectedServer.accountIdentifier == originatingAccountID else { return }
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
             UnsentCanvasManifestStore.removeAll(
@@ -959,6 +969,7 @@ final class AppModel {
 
     func sceneBecameActive() {
         activeSceneCount += 1
+        guard activeSceneCount == 1 else { return }
         lifecycleGeneration &+= 1
         let generation = lifecycleGeneration
         Task { await applicationBecameActive(lifecycleGeneration: generation) }
@@ -966,8 +977,10 @@ final class AppModel {
 
     func sceneResignedActive() {
         activeSceneCount = max(0, activeSceneCount - 1)
-        guard activeSceneCount == 0 else { return }
+        // Privacy masking engages for EVERY resigning scene: iOS captures
+        // that scene's snapshot even while another window stays active.
         engageAppLockForInactiveScene()
+        guard activeSceneCount == 0 else { return }
         lifecycleGeneration &+= 1
         let generation = lifecycleGeneration
         Task { await applicationBecameInactive(lifecycleGeneration: generation) }
@@ -1000,6 +1013,7 @@ final class AppModel {
 
     func applicationBecameActive(lifecycleGeneration generation: Int? = nil) async {
         isApplicationActive = true
+        guard generation == nil || generation == lifecycleGeneration else { return }
         // SQLite can recreate -wal/-shm sidecars after the one-shot
         // exclusion; re-apply it on every activation so replacements never
         // stay backup-eligible.
@@ -1379,6 +1393,9 @@ final class AppModel {
             try? await dependencies.cache.save(profile: profile, selected: true)
             if wasUnavailable { notice = nil }
         } catch LibreChatProtocolError.unauthorized {
+            // A 401 belonging to a superseded account must not sign out the
+            // account now installed on this profile.
+            guard selectedServer?.accountIdentifier == originatingAccountID else { return }
             await invalidateSession(
                 for: profile,
                 runtime: runtime,
