@@ -1357,6 +1357,7 @@ final class AppModel {
               profile.accountIdentifier != nil else { return }
 
         let selectionEpoch = profileSelectionEpoch
+        let originatingAccountID = profile.accountIdentifier
         let wasUnavailable = authenticatedServerPolicyUnavailable
         isRefreshingServerPolicy = true
         defer {
@@ -1368,6 +1369,9 @@ final class AppModel {
         do {
             let result = try await runtime.repository.discoverCapabilities(authenticated: true)
             try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+            // Same-profile account replacement during the refresh must not
+            // receive A's refreshed policy projection.
+            guard selectedServer?.accountIdentifier == originatingAccountID else { return }
             profile.capabilities = result.capabilities
             selectedServer = profile
             compatibility = result
@@ -1382,7 +1386,8 @@ final class AppModel {
             )
         } catch {
             guard selectionEpoch == profileSelectionEpoch,
-                  selectedServer?.id == profile.id else { return }
+                  selectedServer?.id == profile.id,
+                  selectedServer?.accountIdentifier == originatingAccountID else { return }
             let capabilities = (profile.capabilities ?? ServerCapabilities())
                 .failingClosedAuthenticatedPolicy()
             profile.capabilities = capabilities
