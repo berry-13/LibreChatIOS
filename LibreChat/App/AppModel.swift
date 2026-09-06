@@ -707,10 +707,12 @@ final class AppModel {
             throw LibreChatProtocolError.invalidResponse
         }
         let selectionEpoch = profileSelectionEpoch
+        let originatingAccountID = selectedServer?.accountIdentifier
         _ = try await termsRuntime.repository.acceptTerms()
-        // Another scene may have switched to an account whose own terms flow
-        // is pending; only the originating profile's acceptance clears it.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        // Another scene may have switched profiles or accounts whose own
+        // terms flow is pending; only the originating acceptance clears it.
+        guard selectionEpoch == profileSelectionEpoch,
+              selectedServer?.accountIdentifier == originatingAccountID else { return }
         pendingTerms = nil
     }
 

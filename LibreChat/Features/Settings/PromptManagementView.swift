@@ -85,7 +85,9 @@ final class PromptManagementModel {
         isLoadingMore = true
         paginationError = nil
         let requestRevision = revision
-        defer { if requestRevision == revision { isLoadingMore = false } }
+        // A superseding reload invalidates this request; the flag must clear
+        // unconditionally or the new result set can never paginate.
+        defer { isLoadingMore = false }
         do {
             let page = try await directory.promptGroups(PromptTemplateQuery(
                 search: query,

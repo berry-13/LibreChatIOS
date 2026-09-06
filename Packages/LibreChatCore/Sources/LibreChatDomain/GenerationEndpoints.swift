@@ -80,6 +80,11 @@ public enum GenerationEndpointPolicy {
         guard endpointType == "custom" else {
             return .unsupported(.unknownEndpointFamily)
         }
+        // Dot-only names survive the display-name allowlist but normalize
+        // the stream route onto a parent path once appended.
+        guard endpoint != ".", endpoint != ".." else {
+            return .unsupported(.unknownEndpointFamily)
+        }
         return .resumableV2(endpointPathComponent: endpoint)
     }
 
