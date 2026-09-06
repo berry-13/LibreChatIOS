@@ -240,6 +240,14 @@ actor UploadManager: UploadRepository {
             .filter { $0.conversationID == conversationID }
             .map(\.id)
         for id in ownedIDs {
+            // Capture the task, cancel, and DRAIN it before removing rows:
+            // cancel(id:) drops the reference without awaiting, so a
+            // completing performUpload could resurrect the record (or a
+            // won remote attachment) after its draft is gone.
+            let task = tasks[id]
+            tasks[id] = nil
+            task?.cancel()
+            await task?.value
             await cancel(id: id)
             uploadsByID.removeValue(forKey: id)
             try? await cache.removeUpload(id: id, profileID: profileID, accountID: accountID)

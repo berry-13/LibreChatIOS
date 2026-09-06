@@ -92,6 +92,9 @@ struct ConversationListView: View {
             if let repository = appModel.repository {
                 NavigationStack {
                     ProjectsView(appModel: appModel, repository: repository) { conversation in
+                        if conversation.id.isLocalDraft {
+                            model.registerUnsentCanvas(conversation)
+                        }
                         model.includeConversation(conversation)
                         isShowingProjects = false
                         selectConversation(conversation.id)

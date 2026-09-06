@@ -364,7 +364,12 @@ final class AppModel {
     func connect(to input: String) async throws {
         isWorking = true
         notice = nil
-        defer { isWorking = false }
+        profileSelectionEpoch &+= 1
+        let selectionEpoch = profileSelectionEpoch
+        defer {
+            // This connection owns the busy flag; a superseded run releases it.
+            if selectionEpoch == profileSelectionEpoch { isWorking = false }
+        }
 
         let address = try ServerAddress.parse(input)
         var profile = ServerProfile(
@@ -374,7 +379,9 @@ final class AppModel {
         )
         let runtime = dependencies.profileRuntime(for: profile)
         try await runtime.repository.healthCheck()
+        guard selectionEpoch == profileSelectionEpoch else { return }
         let compatibility = try await runtime.repository.discoverCapabilities()
+        guard selectionEpoch == profileSelectionEpoch else { return }
         profile.capabilities = compatibility.capabilities
         try await dependencies.cache.save(profile: profile, selected: true)
 
@@ -751,6 +758,10 @@ final class AppModel {
         await signingOutRuntime.protocolRuntime.authSession.logout()
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
+            UnsentCanvasManifestStore.removeAll(
+                profileID: selectedServer.id.rawValue,
+                accountID: accountID.rawValue
+            )
         }
         // Another scene switching servers mid-logout must not tear down the
         // newly selected session's state. The stale sign-out owned the busy
@@ -781,22 +792,36 @@ final class AppModel {
     /// newly selected one.
     func expireSessionCallback() -> @MainActor () async -> Void {
         let originatingProfileID = selectedServer?.id
-        return { [weak self] in await self?.expireSession(for: originatingProfileID) }
+        let originatingAccountID = selectedServer?.accountIdentifier
+        return { [weak self] in
+            await self?.expireSession(
+                for: originatingProfileID,
+                originatingAccountID: originatingAccountID
+            )
+        }
     }
 
-    func expireSession(for originatingProfileID: ServerProfileID? = nil) async {
+    func expireSession(
+        for originatingProfileID: ServerProfileID? = nil,
+        originatingAccountID: AccountID? = nil
+    ) async {
         guard let selectedServer, let expiringRuntime = activeRuntime else { return }
         let expiringUploadManager = uploadManager
         let selectionEpoch = profileSelectionEpoch
-        // A late 401 raised by a profile the user already switched away
-        // from must never tear down the newly selected session.
+        // A late 401 raised by a profile or account the user already switched
+        // away from must never tear down the newly selected session.
         if let originatingProfileID, originatingProfileID != selectedServer.id { return }
+        if let originatingAccountID, selectedServer.accountIdentifier != originatingAccountID { return }
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await expiringRuntime.repository.detachActiveStreams()
         try? await expiringRuntime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
+            UnsentCanvasManifestStore.removeAll(
+                profileID: selectedServer.id.rawValue,
+                accountID: accountID.rawValue
+            )
         }
         // Every lookup after a suspension must stay bound to the session
         // that actually expired.
@@ -1001,11 +1026,13 @@ final class AppModel {
     func confirmTwoFactorSetup(code: String) async throws {
         guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
         let selectionEpoch = profileSelectionEpoch
+        let originatingAccountID = user?.id
         try await activeRuntime.protocolRuntime.authSession.confirmTwoFactorSetup(code: code)
         await activeRuntime.protocolRuntime.authSession.updateTwoFactorStatus(true)
-        // Another scene can switch profiles while the request is suspended;
-        // the result must never mutate the new account's 2FA state.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        // Another scene can switch profiles or accounts while the request is
+        // suspended; the result must never mutate the new account's 2FA state.
+        guard selectionEpoch == profileSelectionEpoch,
+              user?.id == originatingAccountID else { return }
         updateTwoFactorStatus(true)
     }
 
@@ -1017,9 +1044,11 @@ final class AppModel {
     func disableTwoFactor(proof: TwoFactorProof) async throws {
         guard let activeRuntime else { throw LibreChatProtocolError.unauthorized }
         let selectionEpoch = profileSelectionEpoch
+        let originatingAccountID = user?.id
         try await activeRuntime.protocolRuntime.authSession.disableTwoFactor(proof: proof)
         await activeRuntime.protocolRuntime.authSession.updateTwoFactorStatus(false)
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        guard selectionEpoch == profileSelectionEpoch,
+              user?.id == originatingAccountID else { return }
         updateTwoFactorStatus(false)
     }
 
@@ -1144,6 +1173,10 @@ final class AppModel {
             await hideCache(profileID: profile.id, accountID: accountID)
             AppLog.persistence.error("Deleted-account cache purge failed; the namespace was hidden.")
         }
+        UnsentCanvasManifestStore.removeAll(
+            profileID: profile.id.rawValue,
+            accountID: accountID.rawValue
+        )
         await runtime.repository.resetInMemoryState()
         // Cleanup suspended past the earlier epoch check: if another scene
         // selected a different profile meanwhile, the deleted account's

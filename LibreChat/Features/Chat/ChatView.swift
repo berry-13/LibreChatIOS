@@ -87,15 +87,46 @@ struct ChatView: View {
         return jpeg
     }
 
+    /// Copies the security-scoped file to a staging file in bounded chunks,
+    /// abandoning the copy as soon as the ceiling is exceeded.
+    private static func boundedStagedCopy(of url: URL, limit: Int) throws -> URL {
+        let staging = FileManager.default.temporaryDirectory
+            .appending(path: "LibreChatImports", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let destination = staging.appending(path: UUID().uuidString)
+        try Data().write(to: destination)
+        let source = try FileHandle(forReadingFrom: url)
+        let output = try FileHandle(forWritingTo: destination)
+        do {
+            var written = 0
+            while let chunk = try source.read(upToCount: 1_048_576), !chunk.isEmpty {
+                try output.write(contentsOf: chunk)
+                written += chunk.count
+                if written > limit {
+                    throw ImportedFileTooLarge(limit: limit)
+                }
+            }
+            try output.close()
+            try source.close()
+        } catch {
+            try? output.close()
+            try? source.close()
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+        return destination
+    }
+
     /// Reads the security-scoped file in bounded chunks, abandoning the
     /// buffer as soon as the ceiling is exceeded.
-    private static func boundedFileData(at url: URL, limit: Int) throws -> Data {
-        struct ImportedFileTooLarge: LocalizedError {
-            let limit: Int
-            var errorDescription: String? {
-                "That file is too large to attach (over \(limit / 1_048_576) MB)."
-            }
+    private struct ImportedFileTooLarge: LocalizedError {
+        let limit: Int
+        var errorDescription: String? {
+            "That file is too large to attach (over \(limit / 1_048_576) MB)."
         }
+    }
+
+    private static func boundedFileData(at url: URL, limit: Int) throws -> Data {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var data = Data()
@@ -831,7 +862,19 @@ struct ChatView: View {
                         model.errorMessage = "That file is too large to attach (over \(Self.maximumImportedFileBytes / 1_048_576) MB)."
                         return
                     }
-                    let data = try Self.boundedFileData(at: url, limit: Self.maximumImportedFileBytes)
+                    // Copy through bounded chunks into a file-backed
+                    // staging copy and hand the uploader a memory-mapped
+                    // view, so near-ceiling imports never buffer fully in
+                    // RAM.
+                    let stagedCopy = try Self.boundedStagedCopy(
+                        of: url,
+                        limit: Self.maximumImportedFileBytes
+                    )
+                    defer { try? FileManager.default.removeItem(at: stagedCopy) }
+                    let data = try Data(
+                        contentsOf: stagedCopy,
+                        options: [.mappedIfSafe]
+                    )
                     try await model.attach(
                         data: data,
                         filename: values.name ?? url.lastPathComponent,
