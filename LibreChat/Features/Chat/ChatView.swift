@@ -1751,16 +1751,10 @@ struct ChatView: View {
 
     private func readAloudSelection(for message: ChatMessage) -> ReadAloudSelection? {
         guard canUseReadAloud(), !isOffline() else { return nil }
-        let text = message.plainText
-        guard !text.isEmpty else { return nil }
-        return ReadAloudSelection(
-            profileID: profileID,
-            accountID: accountID,
-            conversationID: message.conversationID,
-            messageID: message.id,
-            contentRevision: "\(text.count)",
-            text: text
-        )
+        // The projector enforces the finished-assistant-prose boundary;
+        // message.plainText would also send reasoning, code, and tool
+        // output to the server's TTS provider.
+        return readAloudModel.selection(for: message)
     }
 
     private func readAloudAction(for message: ChatMessage) -> ReadAloudActionPresentation? {

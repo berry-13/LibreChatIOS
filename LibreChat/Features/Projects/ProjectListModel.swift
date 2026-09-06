@@ -294,6 +294,9 @@ final class ProjectListModel {
         do {
             requestRevision &+= 1
             _ = try await repository.deleteProject(id: id)
+            // The confirmed deletion supersedes pre-deletion listings that
+            // may still be in flight.
+            requestRevision &+= 1
             projects.removeAll { $0.id == id }
             return true
         } catch {

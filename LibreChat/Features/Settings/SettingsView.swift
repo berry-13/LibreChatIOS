@@ -614,9 +614,10 @@ private struct AccountProfileView: View {
             loadedAvatar = cached
             return
         }
+        let sessionGeneration = ServerEntityImageStore.currentSessionGeneration()
         guard let data = await fetchServerImage(url),
               let decoded = ServerEntityImageStore.downsampledImage(from: data) else { return }
-        ServerEntityImageStore.store(decoded, for: url)
+        ServerEntityImageStore.store(decoded, for: url, sessionGeneration: sessionGeneration)
         loadedAvatar = decoded
     }
 

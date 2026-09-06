@@ -568,9 +568,10 @@ struct AgentAvatarIcon: View {
                 return
             }
             loadedImage = nil
+            let sessionGeneration = ServerEntityImageStore.currentSessionGeneration()
             guard let data = await fetchServerImage(url),
                   let decoded = ServerEntityImageStore.downsampledImage(from: data) else { return }
-            ServerEntityImageStore.store(decoded, for: url)
+            ServerEntityImageStore.store(decoded, for: url, sessionGeneration: sessionGeneration)
             loadedImage = decoded
         }
     }

@@ -708,15 +708,24 @@ private struct FileLibraryDetailView: View {
 /// images power the detail preview; thumbnails are downsampled for the list.
 enum FileImagePreviewStore {
     private nonisolated(unsafe) static let cache = NSCache<NSString, UIImage>()
+    private nonisolated(unsafe) static var generation = 0
 
     static func cachedImage(itemID: String) -> UIImage? {
         cache.object(forKey: itemID as NSString)
     }
 
+    /// Writes are rejected when a session transition flushed the cache while
+    /// this fetch was in flight.
+    private static func cacheIfCurrent(_ image: UIImage, forKey key: NSString, fetchGeneration: Int) {
+        guard fetchGeneration == generation else { return }
+        cache.setObject(image, forKey: key)
+    }
+
     /// Previews are authenticated downloads, so the cache is session-scoped:
-    /// account and profile transitions flush it to keep one session from
-    /// rendering another session's files.
+    /// account and profile transitions flush it and invalidate in-flight
+    /// writes, keeping one session from rendering another session's files.
     static func removeAllCachedImages() {
+        generation &+= 1
         cache.removeAllObjects()
     }
 
@@ -725,6 +734,7 @@ enum FileImagePreviewStore {
         repository: any FileLibraryRepository
     ) async throws -> UIImage {
         if let cached = cache.object(forKey: item.id as NSString) { return cached }
+        let fetchGeneration = generation
         let downloaded = try await repository.downloadFile(item)
         defer { try? FileManager.default.removeItem(at: downloaded.localURL) }
         // Highly compressed sources can decompress to hundreds of megabytes
@@ -742,7 +752,7 @@ enum FileImagePreviewStore {
             throw LibrayImagePreviewError.unrenderable
         }
         let image = UIImage(cgImage: cgImage)
-        cache.setObject(image, forKey: item.id as NSString)
+        cacheIfCurrent(image, forKey: item.id as NSString, fetchGeneration: fetchGeneration)
         return image
     }
 
@@ -753,6 +763,7 @@ enum FileImagePreviewStore {
     ) async -> UIImage? {
         let thumbKey = "thumb:\(item.id)" as NSString
         if let cached = cache.object(forKey: thumbKey) { return cached }
+        let fetchGeneration = generation
         let downloaded = try? await repository.downloadFile(item)
         guard let downloaded else { return nil }
         defer { try? FileManager.default.removeItem(at: downloaded.localURL) }
@@ -772,7 +783,7 @@ enum FileImagePreviewStore {
             return nil
         }
         let thumbnail = UIImage(cgImage: cgThumbnail)
-        cache.setObject(thumbnail, forKey: thumbKey)
+        cacheIfCurrent(thumbnail, forKey: thumbKey, fetchGeneration: fetchGeneration)
         return thumbnail
     }
 }
