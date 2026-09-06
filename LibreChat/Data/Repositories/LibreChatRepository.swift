@@ -1568,15 +1568,49 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             }
             return try Data(contentsOf: response.localURL)
         }
-        let (localURL, _) = try await URLSession.shared.download(from: url)
-        defer { try? FileManager.default.removeItem(at: localURL) }
-        let byteCount = ((try? FileManager.default.attributesOfItem(
-            atPath: localURL.path
-        ))?[.size] as? NSNumber)?.intValue ?? 0
-        guard byteCount <= maximumImageBytes else {
+        // External URLs stream through the same byte cap — but enforced
+        // while bytes arrive, so a hostile origin cannot fill temporary
+        // storage before the post-completion check would run.
+        let request = URLRequest(url: url)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        if let http = response as? HTTPURLResponse,
+           http.expectedContentLength > maximumImageBytes {
             throw LibreChatProtocolError.unsupported(
-                "That image is too large to display (\(byteCount) bytes)."
+                "That image is too large to display (\(http.expectedContentLength) bytes)."
             )
+        }
+        let staging = FileManager.default.temporaryDirectory
+            .appending(path: "LibreChatExternalImages", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        let localURL = staging.appending(path: UUID().uuidString)
+        try Data().write(to: localURL)
+        let handle = try FileHandle(forWritingTo: localURL)
+        do {
+            var buffered = Data()
+            var received = 0
+            for try await byte in bytes {
+                buffered.append(byte)
+                received += 1
+                if buffered.count >= 256 * 1_024 {
+                    try handle.write(contentsOf: buffered)
+                    buffered.removeAll(keepingCapacity: true)
+                }
+                if received > maximumImageBytes {
+                    try? handle.close()
+                    try? FileManager.default.removeItem(at: localURL)
+                    throw LibreChatProtocolError.unsupported(
+                        "That image is too large to display (\(received) bytes)."
+                    )
+                }
+            }
+            if !buffered.isEmpty {
+                try handle.write(contentsOf: buffered)
+            }
+            try handle.close()
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: localURL)
+            throw error
         }
         return try Data(contentsOf: localURL)
     }

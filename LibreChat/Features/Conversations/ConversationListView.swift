@@ -1713,13 +1713,28 @@ enum ServerEntityImageStore {
     }
 
     static func store(_ image: UIImage, for url: URL) {
+        store(image, for: url, sessionGeneration: currentSessionGeneration())
+    }
+
+    /// Callers capture the generation before their fetch and pass it back on
+    /// store: a fetch completing after a session transition must not
+    /// repopulate the cache for the new account.
+    static func store(_ image: UIImage, for url: URL, sessionGeneration captured: Int) {
+        guard captured == generation else { return }
         cache.setObject(image, forKey: url.absoluteString as NSString)
     }
+
+    static func currentSessionGeneration() -> Int {
+        generation
+    }
+
+    private nonisolated(unsafe) static var generation = 0
 
     /// Authenticated imagery is session-scoped: every account or profile
     /// transition clears the cache so one session can never render another
     /// session's avatars or icons.
     static func removeAllCachedImages() {
+        generation &+= 1
         cache.removeAllObjects()
     }
 
@@ -1794,12 +1809,13 @@ struct EndpointBrandIcon: View {
             }
             loadedImage = nil
             loadFailed = false
+            let sessionGeneration = ServerEntityImageStore.currentSessionGeneration()
             guard let data = await fetchServerImage(url),
                   let decoded = ServerEntityImageStore.downsampledImage(from: data) else {
                 loadFailed = true
                 return
             }
-            ServerEntityImageStore.store(decoded, for: url)
+            ServerEntityImageStore.store(decoded, for: url, sessionGeneration: sessionGeneration)
             loadedImage = decoded
         }
     }
@@ -2465,9 +2481,10 @@ struct AccountFloatingButton: View {
                 loadedAvatar = cached
                 return
             }
+            let sessionGeneration = ServerEntityImageStore.currentSessionGeneration()
             guard let data = await fetchServerImage(url),
                   let decoded = ServerEntityImageStore.downsampledImage(from: data) else { return }
-            ServerEntityImageStore.store(decoded, for: url)
+            ServerEntityImageStore.store(decoded, for: url, sessionGeneration: sessionGeneration)
             loadedAvatar = decoded
         }
     }
