@@ -64,10 +64,10 @@ final class ConversationListModel {
     /// Set once a live server refresh lands during loadIfNeeded; the racing
     /// cache read must not overwrite it afterwards.
     private var liveRefreshArrived = false
-    /// Mutations (delete, rename, pin, archive, duplicate) advance this so an
-    /// in-flight listing request that captured older state can never install
-    /// a stale page over the confirmed local edit.
     private var listingRevision = 0
+    /// Server-side ids observed across the current pagination traversal; the
+    /// final page prunes rows that never appeared.
+    private var authoritativeIDs = Set<ConversationID>()
     /// Whole-list favorite replacements run strictly one at a time.
     private var favoritesMutationChain: Task<[ChatFavorite], Error>?
     /// Monotonic sequence for queued replacements; only the newest may
@@ -264,7 +264,7 @@ final class ConversationListModel {
         }
         listingRevision &+= 1
         let revision = listingRevision
-
+        authoritativeIDs = Set()
         do {
             let page = try await repository.conversations(cursor: nil, limit: 25)
             guard revision == listingRevision else { return }
@@ -311,6 +311,16 @@ final class ConversationListModel {
         do {
             let page = try await repository.conversations(cursor: nextCursor, limit: 25)
             guard revision == listingRevision else { return }
+            for conversation in page.conversations {
+                authoritativeIDs.insert(conversation.id)
+            }
+            if page.nextCursor == nil {
+                // The traversal completed: rows absent from the accumulated
+                // authoritative listing were deleted or archived elsewhere.
+                conversations = conversations.filter {
+                    authoritativeIDs.contains($0.id) || $0.id.isLocalDraft
+                }
+            }
             let existingIDs = Set(conversations.map(\.id))
             conversations.append(contentsOf: page.conversations.filter { !existingIDs.contains($0.id) })
             self.nextCursor = page.nextCursor
@@ -448,6 +458,9 @@ final class ConversationListModel {
         do {
             targetCatalog = try await repository.newChatTargetCatalog()
             await loadFavorites()
+            // The catalog carries the session identity the manifest
+            // namespace is keyed on, so restored canvases attach here.
+            restoreUnsentCanvasManifests()
         }
         catch {
             targetCatalog = nil
@@ -761,10 +774,16 @@ final class ConversationListModel {
         } catch is CancellationError {
         } catch {
             if error.isUnauthorized { await onUnauthorized() }
-            // Roll back to the last server-confirmed list: a failed chained
-            // write may have committed its own predecessor only.
-            favorites = confirmedFavorites
-            reportOperationError(error.userFacingMessage)
+            // Post-dispatch failure is ambiguous: the write may have
+            // committed. Reconcile server truth instead of rolling back.
+            if let authoritative = try? await repository.chatFavorites() {
+                confirmedFavorites = authoritative
+                favorites = authoritative
+                reportOperationError("Pinned model state was re-checked against LibreChat after a save failure.")
+            } else {
+                favorites = confirmedFavorites
+                reportOperationError(error.userFacingMessage)
+            }
         }
     }
 
@@ -790,24 +809,46 @@ final class ConversationListModel {
         return unsentCanvases[id]
     }
 
+    /// The catalog identity scopes the durable manifest namespace; canvases
+    /// created before the catalog is known stay session-only.
+    private var unsentManifestScope: (profileID: ServerProfileID, accountID: AccountID)? {
+        guard let catalog = targetCatalog else { return nil }
+        return (catalog.profileID, catalog.accountID)
+    }
+
     func registerUnsentCanvas(_ canvas: LibreChatDomain.Conversation) {
         unsentCanvases[canvas.id] = canvas
-        if canvas.id.isLocalDraft, !canvas.isTemporaryConversation {
-            UnsentCanvasManifestStore.save(canvas)
+        if canvas.id.isLocalDraft, !canvas.isTemporaryConversation,
+           let scope = unsentManifestScope {
+            UnsentCanvasManifestStore.save(
+                canvas,
+                profileID: scope.profileID.rawValue,
+                accountID: scope.accountID.rawValue
+            )
         }
         Task { await refreshDraftCanvases() }
     }
 
     func unregisterUnsentCanvas(_ id: ConversationID) {
         unsentCanvases.removeValue(forKey: id)
-        UnsentCanvasManifestStore.remove(id)
+        if let scope = unsentManifestScope {
+            UnsentCanvasManifestStore.remove(
+                id,
+                profileID: scope.profileID.rawValue,
+                accountID: scope.accountID.rawValue
+            )
+        }
     }
 
     /// Restores persisted canvases at launch; refreshDraftCanvases later
     /// surfaces only those whose saved draft text still exists in this
     /// profile's scope.
     private func restoreUnsentCanvasManifests() {
-        for canvas in UnsentCanvasManifestStore.restoreAll() where unsentCanvases[canvas.id] == nil {
+        guard let scope = unsentManifestScope else { return }
+        for canvas in UnsentCanvasManifestStore.restoreAll(
+            profileID: scope.profileID.rawValue,
+            accountID: scope.accountID.rawValue
+        ) where unsentCanvases[canvas.id] == nil {
             unsentCanvases[canvas.id] = canvas
         }
     }
@@ -921,8 +962,8 @@ final class ArchivedConversationListModel {
             nextCursor = page.nextCursor
             state = .loaded
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard revision == listingRevision else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             state = conversations.isEmpty ? .failed(error.userFacingMessage) : .loaded
             errorMessage = conversations.isEmpty ? nil : error.userFacingMessage
         }
@@ -942,8 +983,8 @@ final class ArchivedConversationListModel {
             conversations.append(contentsOf: page.conversations.filter { !existingIDs.contains($0.id) })
             self.nextCursor = page.nextCursor
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard revision == listingRevision else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             errorMessage = error.userFacingMessage
         }
     }
@@ -987,44 +1028,60 @@ final class ArchivedConversationListModel {
 /// existed only in memory, so a process termination between typing and the
 /// first send made the saved text permanently unreachable.
 enum UnsentCanvasManifestStore {
-    static var directory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    /// Manifests carry private targets and prompts, so they live in
+    /// per-profile/account namespaces that are excluded from backups and
+    /// deleted with their owning account's local data.
+    static func directory(profileID: String, accountID: String) -> URL {
+        let namespace = String(
+            (profileID + "." + accountID).map {
+                $0.isLetter || $0.isNumber ? $0 : "_"
+            }
+        )
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "LibreChatUnsentCanvases", directoryHint: .isDirectory)
+            .appending(path: namespace, directoryHint: .isDirectory)
     }
 
-    static func url(for id: ConversationID) -> URL {
+    static func url(for id: ConversationID, profileID: String, accountID: String) -> URL {
         let safe = String(id.rawValue.map {
             $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_"
         })
-        return directory.appending(path: safe + ".json")
+        return directory(profileID: profileID, accountID: accountID)
+            .appending(path: safe + ".json")
     }
 
-    static func save(_ canvas: LibreChatDomain.Conversation) {
+    static func save(
+        _ canvas: LibreChatDomain.Conversation,
+        profileID: String,
+        accountID: String
+    ) {
         do {
+            let directory = directory(profileID: profileID, accountID: accountID)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             excludeFromBackups(directory)
+            let fileURL = url(for: canvas.id, profileID: profileID, accountID: accountID)
             let data = try JSONEncoder().encode(canvas)
-            try data.write(to: url(for: canvas.id), options: .atomic)
-            excludeFromBackups(url(for: canvas.id))
+            try data.write(to: fileURL, options: .atomic)
+            excludeFromBackups(fileURL)
         } catch {
             AppLog.persistence.error("Unsent canvas metadata could not be persisted.")
         }
     }
 
-    /// Canvas metadata carries private targets and prompts; it follows the
-    /// same backup-exclusion policy as the rest of the offline store.
-    private static func excludeFromBackups(_ url: URL) {
-        var mutableURL = url
-        var resourceValues = URLResourceValues()
-        resourceValues.isExcludedFromBackup = true
-        try? mutableURL.setResourceValues(resourceValues)
+    static func remove(_ id: ConversationID, profileID: String, accountID: String) {
+        try? FileManager.default.removeItem(
+            at: url(for: id, profileID: profileID, accountID: accountID)
+        )
     }
 
-    static func remove(_ id: ConversationID) {
-        try? FileManager.default.removeItem(at: url(for: id))
+    static func removeAll(profileID: String, accountID: String) {
+        try? FileManager.default.removeItem(
+            at: directory(profileID: profileID, accountID: accountID)
+        )
     }
 
-    static func restoreAll() -> [LibreChatDomain.Conversation] {
+    static func restoreAll(profileID: String, accountID: String) -> [LibreChatDomain.Conversation] {
+        let directory = directory(profileID: profileID, accountID: accountID)
         let urls = (try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
@@ -1033,5 +1090,12 @@ enum UnsentCanvasManifestStore {
             guard fileURL.pathExtension == "json" else { return nil }
             return try? JSONDecoder().decode(LibreChatDomain.Conversation.self, from: Data(contentsOf: fileURL))
         }
+    }
+
+    private static func excludeFromBackups(_ url: URL) {
+        var mutableURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? mutableURL.setResourceValues(resourceValues)
     }
 }

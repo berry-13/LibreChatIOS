@@ -371,9 +371,13 @@ private struct FileLibraryDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("file-library-detail")
         .task {
-            await previewModel.loadIfNeeded(fileID: item.id)
+            // Images never consume the text preview; loading the two
+            // sequentially would delay the actual image download behind an
+            // unrelated (and potentially slow) text endpoint.
             if isImageFile {
                 await imagePreviewModel.load(item: item, repository: repository)
+            } else {
+                await previewModel.loadIfNeeded(fileID: item.id)
             }
         }
         .confirmationDialog(

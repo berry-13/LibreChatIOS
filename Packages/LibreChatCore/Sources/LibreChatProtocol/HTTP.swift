@@ -348,7 +348,8 @@ public actor HTTPTransport {
     /// while bytes arrive — `URLSession.download(for:)` would only surface
     /// an oversized body after it had already been written in full.
     private func boundedDownload(
-        request: URLRequest
+        request: URLRequest,
+        byteLimit: Int = 268_435_456
     ) async throws -> (URL, URLResponse) {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -374,11 +375,11 @@ public actor HTTPTransport {
                     try fileHandle.write(contentsOf: buffered)
                     buffered.removeAll(keepingCapacity: true)
                 }
-                if written > Self.maximumStagedDownloadBytes {
+                if written > byteLimit {
                     try? fileHandle.close()
                     try? FileManager.default.removeItem(at: stagedURL)
                     throw LibreChatProtocolError.unsupported(
-                        "That download exceeds the \(Self.maximumStagedDownloadBytes) byte limit."
+                        "That download exceeds the \(byteLimit) byte limit."
                     )
                 }
             }
@@ -494,17 +495,19 @@ public actor HTTPTransport {
     /// Largest body a file download may stage. The composer accepts 200 MiB
     /// imports and the upload contract allows 512 MiB server-side, so the
     /// bound must cover files the app itself accepts, not just images.
-    static let maximumStagedDownloadBytes = 256 * 1_048_576
+    static let maximumStagedDownloadBytes = 268_435_456
+    static let defaultStagedDownloadBytes = 268_435_456
 
     public func executeDownload(
         _ request: URLRequest,
-        attempt: Int = 1
+        attempt: Int = 1,
+        byteLimit: Int = 268_435_456
     ) async throws -> HTTPDownloadResponse {
         let route = ProtocolRoute.classify(path: request.url?.path ?? "")
         let method = HTTPMethod(rawValue: request.httpMethod ?? "") ?? .get
         observability.record(.transportStarted(route: route, method: method, attempt: attempt))
         do {
-            let (stagedURL, response) = try await boundedDownload(request: request)
+            let (stagedURL, response) = try await boundedDownload(request: request, byteLimit: byteLimit)
             guard let response = response as? HTTPURLResponse,
                   let finalURL = response.url else {
                 throw LibreChatProtocolError.invalidResponse
@@ -1188,7 +1191,8 @@ public actor RESTClient {
         body: Data? = nil,
         authorized: Bool,
         retryPolicy: RequestRetryPolicy = .never,
-        baseURL: URL? = nil
+        baseURL: URL? = nil,
+        byteLimit: Int = 268_435_456
     ) async throws -> HTTPDownloadResponse {
         let maximumAttempts: Int = switch retryPolicy {
         case .never: 1
@@ -1226,7 +1230,11 @@ public actor RESTClient {
                     }
                 }
 
-                let response = try await transport.executeDownload(request, attempt: attempt)
+                let response = try await transport.executeDownload(
+                    request,
+                    attempt: attempt,
+                    byteLimit: byteLimit
+                )
                 if authorized,
                    (response.statusCode == 401 || Self.isBrowserLoginRedirect(response.finalURL)),
                    !refreshed,

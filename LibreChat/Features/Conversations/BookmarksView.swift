@@ -321,8 +321,8 @@ private final class BookmarkedConversationListModel {
         } catch is CancellationError {
             return
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard revision == listingRevision else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             paginationError = error.userFacingMessage
         }
     }

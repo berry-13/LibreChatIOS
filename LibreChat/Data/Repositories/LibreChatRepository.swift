@@ -1273,7 +1273,17 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             guard let prompt = response.prompt else {
                 throw PromptManagementError.outcomeUnknown
             }
-            return try prompt.domainModel(expectedGroupID: input.groupID)
+            let version = try prompt.domainModel(expectedGroupID: input.groupID)
+            // A same-group stale version must not confirm the one-shot add:
+            // require an exact echo of the authored text and kind.
+            func normalized(_ value: String?) -> String {
+                (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard normalized(version.text) == normalized(input.text),
+                  version.kind == input.kind else {
+                throw PromptManagementError.outcomeUnknown
+            }
+            return version
         } catch is CancellationError {
             throw PromptManagementError.outcomeUnknown
         } catch let error as PromptManagementError {
@@ -1593,8 +1603,9 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                 // percent-encoded form would double-escape signature
                 // parameters and break authenticated image fetches.
                 queryItems: components.queryItems ?? [],
-                authorized: false,
-                baseURL: pathEscapesDeploymentBase ? originComponents.url : nil
+                authorized: true,
+                baseURL: pathEscapesDeploymentBase ? originComponents.url : nil,
+                byteLimit: maximumImageBytes
             )
             defer { try? FileManager.default.removeItem(at: response.localURL) }
             let byteCount = ((try? FileManager.default.attributesOfItem(
@@ -5382,7 +5393,10 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         if resume { query.append(URLQueryItem(name: "resume", value: "true")) }
         var request = try await runtime.transport.request(
             method: .get,
+            // The stream id is server data; the component form is encoded
+            // exactly once and rejects dot-only traversal values.
             path: "api/agents/chat/stream/\(handle.streamID)",
+            pathComponents: ["api", "agents", "chat", "stream", handle.streamID],
             queryItems: query,
             headers: [
                 "Accept": "text/event-stream",
