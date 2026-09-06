@@ -604,6 +604,7 @@ private struct BoundedMessageImage: View {
     let url: URL
     let alternativeText: String?
 
+    @Environment(\.fetchServerImage) private var fetchServerImage
     @State private var image: UIImage?
 
     private static let maximumBytes = 25 * 1_048_576
@@ -622,8 +623,29 @@ private struct BoundedMessageImage: View {
         }
         .accessibilityLabel(alternativeText ?? "Attached image")
         .task(id: url) {
-            image = await Self.load(from: url)
+            // Protected/relative content rides the app's authenticated,
+            // bounded pipeline; only unmatched absolute URLs fall back to a
+            // direct bounded fetch.
+            if let data = try? await fetchServerImage(url) {
+                image = Self.downsampled(data)
+            } else if url.absoluteString.hasPrefix("http") {
+                image = await Self.load(from: url)
+            }
         }
+    }
+
+    private static func downsampled(_ data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixel,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 
     private static func load(from url: URL) async -> UIImage? {

@@ -352,6 +352,20 @@ final class AgentRepositoryTests: XCTestCase {
                     Self.response(request, status: 201),
                     Data(#"{"id":"agent_new","_id":"507f1f77bcf86cd799439011","name":"Researcher","provider":"openAI","model":"gpt-safe"}"#.utf8)
                 )
+            case ("GET", "/api/agents/agent_new/expanded"):
+                // Creation now verifies the authored metadata through an owner
+                // expanded read before reporting confirmation; the echo
+                // includes the authored description.
+                return (
+                    Self.response(request, status: 200),
+                    Data(#"{"id":"agent_new","name":"Researcher","description":"Find evidence","provider":"openAI","model":"gpt-safe"}"#.utf8)
+                )
+            case ("GET", "/api/agents"):
+                // The confirmed outcome triggers a directory refresh.
+                return (
+                    Self.response(request, status: 200),
+                    Data(#"{"data":[{"id":"agent_new","name":"Researcher"}],"has_more":false}"#.utf8)
+                )
             default:
                 XCTFail("Unexpected request: \(request.httpMethod ?? "nil") \(request.url?.path ?? "nil")")
                 return (Self.response(request, status: 500), Data())
@@ -362,11 +376,11 @@ final class AgentRepositoryTests: XCTestCase {
         let outcome = try await repository.createBasicAgent(Self.basicCreationRequest())
 
         guard case let .confirmed(result) = outcome else {
-            return XCTFail("Expected strict direct confirmation")
+            return XCTFail("Expected strict direct confirmation, got \(outcome)")
         }
         XCTAssertEqual(result.agentID, AgentID(rawValue: "agent_new"))
         XCTAssertEqual(scenario.count(method: "POST"), 1)
-        XCTAssertEqual(scenario.count(method: "GET"), 1)
+        XCTAssertEqual(scenario.count(method: "GET"), 2)
     }
 
     func testAmbiguousBasicAgentCreationReadsDirectoryOnceAndNeverReposts() async throws {

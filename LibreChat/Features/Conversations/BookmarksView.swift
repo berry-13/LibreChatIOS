@@ -64,8 +64,8 @@ final class BookmarksModel {
         } catch is CancellationError {
             return
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard revision == directoryRevision else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             state = tags.isEmpty ? .failed(error.userFacingMessage) : .loaded
             errorMessage = tags.isEmpty ? nil : error.userFacingMessage
         }

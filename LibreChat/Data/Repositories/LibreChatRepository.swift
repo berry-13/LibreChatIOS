@@ -824,15 +824,41 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                     LibreChatBasicAgentCreationResponseDTO.self,
                     from: response.data
                 )
-                return try LibreChatAgentsAPI.confirmedBasicCreation(
+                let outcome = try LibreChatAgentsAPI.confirmedBasicCreation(
                     from: dto,
                     statusCode: response.statusCode,
                     for: request,
                     validatingAgainst: catalog
                 )
+                // The 201 echo carries only identity fields; an owner
+                // expanded read verifies the authored metadata before the
+                // sheet reports success. (The VIEW-filtered surface hides
+                // instructions, so those remain POST-allowlist-trusted.)
+                switch outcome {
+                case .confirmed(let result):
+                    func normalized(_ value: String?) -> String {
+                        (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    let detail = try await runtime.restClient.send(
+                        LibreChatAgentsAPI.expanded(id: result.agentID)
+                    ).domainModel()
+                    guard detail.id == result.agentID,
+                          normalized(detail.name) == normalized(request.name),
+                          normalized(detail.description) == normalized(request.description),
+                          detail.provider == request.reviewedModel.provider,
+                          detail.model == request.reviewedModel.model else {
+                        return .outcomeUnknown(.responseLostAfterDispatch)
+                    }
+                    return .confirmed(result)
+                case .outcomeUnknown:
+                    break
+                }
             } catch {
+                AppLog.generation.error("Agent creation verification read failed: \(String(describing: error), privacy: .public)")
                 // A malformed 2xx or wrong success status may still follow a
-                // committed create. Never repeat the POST.
+                // committed create. Never repeat the POST — the outcome stays
+                // unknown and reconciliation owns it.
+                return .outcomeUnknown(.responseLostAfterDispatch)
             }
         } catch is CancellationError {
             // Cancellation may race a committed server mutation.
@@ -2637,6 +2663,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
             do {
                 let existenceRequest = APIRequest<LibreChatConversationDTO>(
                     path: "api/convos/\(id.rawValue)",
+                    pathComponents: ["api", "convos", id.rawValue],
                     retryPolicy: .idempotent(maximumAttempts: 2)
                 )
                 _ = try await runtime.restClient.send(existenceRequest)

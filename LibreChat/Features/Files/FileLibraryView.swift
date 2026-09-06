@@ -756,6 +756,11 @@ enum FileImagePreviewStore {
         return image
     }
 
+    /// Automatic row previews never download large originals: a metadata
+    /// size above this bound renders the generic icon instead, and the
+    /// detail view stays the only explicit full download.
+    static let maximumAutomaticThumbnailBytes = 25 * 1_048_576
+
     static func thumbnail(
         item: FileLibraryItem,
         repository: any FileLibraryRepository,
@@ -763,6 +768,11 @@ enum FileImagePreviewStore {
     ) async -> UIImage? {
         let thumbKey = "thumb:\(item.id)" as NSString
         if let cached = cache.object(forKey: thumbKey) { return cached }
+        // Metadata-based guard: a large declared size skips the automatic
+        // download entirely instead of transferring the original.
+        if let declared = item.file.bytes, declared > maximumAutomaticThumbnailBytes {
+            return nil
+        }
         let fetchGeneration = generation
         let downloaded = try? await repository.downloadFile(item)
         guard let downloaded else { return nil }

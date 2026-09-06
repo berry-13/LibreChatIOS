@@ -193,11 +193,11 @@ final class SearchModel {
             }
             state = .loaded
         } catch {
-            if error.isUnauthorized { await onUnauthorized() }
             guard !(error is CancellationError),
                   generation == requestGeneration,
                   query == normalizedQuery,
                   scope == self.scope else { return }
+            if error.isUnauthorized { await onUnauthorized() }
             state = .failed(error.userFacingMessage)
         }
     }

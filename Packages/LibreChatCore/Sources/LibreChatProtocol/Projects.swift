@@ -159,20 +159,33 @@ public enum LibreChatProjectsAPI {
     public static func project(
         id: ProjectID
     ) throws -> APIRequest<LibreChatProjectDTO> {
-        APIRequest(path: try projectPath(id))
+        try APIRequest(
+            path: projectPath(id),
+            pathComponents: ["api", "projects", id.rawValue]
+        )
     }
 
     public static func update(
         id: ProjectID,
         input: UpdateChatProjectInput
     ) throws -> APIRequest<LibreChatProjectDTO> {
-        try APIRequest(method: .patch, path: projectPath(id), body: input)
+        try APIRequest(
+            method: .patch,
+            path: projectPath(id),
+            pathComponents: ["api", "projects", id.rawValue],
+            body: input
+        )
     }
 
     public static func delete(
         id: ProjectID
     ) throws -> APIRequest<LibreChatDeleteProjectDTO> {
-        try APIRequest(method: .delete, path: projectPath(id), retryPolicy: .never)
+        try APIRequest(
+            method: .delete,
+            path: projectPath(id),
+            pathComponents: ["api", "projects", id.rawValue],
+            retryPolicy: .never
+        )
     }
 
     public static func assign(
@@ -181,33 +194,22 @@ public enum LibreChatProjectsAPI {
     ) throws -> APIRequest<LibreChatProjectAssignmentDTO> {
         try APIRequest(
             method: .put,
-            // The conversation id is server data; percent-encoding it into a
-            // single validated segment keeps a hostile value ('/', '.', '..')
-            // from splitting or normalizing the route.
-            path: "api/projects/conversations/\(try encodedPathComponent(conversationID.rawValue))",
+            // The conversation id is server data; the component form is
+            // encoded exactly once and rejects dot-only traversal values.
+            path: "api/projects/conversations/\(conversationID.rawValue)",
+            pathComponents: ["api", "projects", "conversations", conversationID.rawValue],
             body: ProjectAssignmentRequestDTO(projectID: projectID?.rawValue)
         )
     }
 
-    /// Project IDs are opaque server data: percent-encode them into a single
-    /// path segment (rejecting dot-only values) so a malformed identifier can
-    /// never normalize a GET/PATCH/DELETE onto a sibling or parent route.
+    /// The human-readable form for route classification; the transport
+    /// builds the URL from `pathComponents`, which percent-encodes each raw
+    /// segment exactly once and rejects dot-only traversal values.
     private static func projectPath(_ id: ProjectID) throws -> String {
-        "api/projects/\(try encodedPathComponent(id.rawValue))"
-    }
-
-    /// Percent-encodes a server-supplied identifier into one RFC 3986-safe
-    /// path segment, rejecting dot-only traversal values.
-    private static func encodedPathComponent(_ rawValue: String) throws -> String {
-        guard !rawValue.isEmpty, rawValue != ".", rawValue != ".." else {
-            throw LibreChatProtocolError.encoding("The identifier is not path safe.")
+        guard !id.rawValue.isEmpty, id.rawValue != ".", id.rawValue != ".." else {
+            throw LibreChatProtocolError.encoding("The project identifier is not path safe.")
         }
-        var allowed = CharacterSet.alphanumerics
-        allowed.insert(charactersIn: "-._~")
-        guard let encoded = rawValue.addingPercentEncoding(withAllowedCharacters: allowed) else {
-            throw LibreChatProtocolError.encoding("The identifier could not be encoded safely.")
-        }
-        return encoded
+        return "api/projects/\(id.rawValue)"
     }
 }
 

@@ -201,6 +201,18 @@ final class ProjectListModel {
             let project = try await repository.createProject(
                 CreateChatProjectInput(name: trimmedName, description: normalizedDescription(description))
             )
+            // A valid-but-foreign payload must not be treated as confirmation
+            // of THIS create; the outcome stays unknown until reconciliation.
+            func normalized(_ value: String?) -> String {
+                (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard normalized(project.name) == normalized(trimmedName),
+                  normalized(project.description) == normalized(normalizedDescription(description)) else {
+                isCreationOutcomeUnknown = true
+                attemptedCreateName = trimmedName
+                operationError = "LibreChat's response could not be confirmed as this project. Refresh the projects list before trying again."
+                return nil
+            }
             // The confirmed creation supersedes any listing captured before it.
             requestRevision &+= 1
             if matchesSearch(project) {
