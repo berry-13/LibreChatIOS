@@ -396,13 +396,18 @@ final class AppModel {
         // another account's session.
         ServerEntityImageStore.removeAllCachedImages()
         FileImagePreviewStore.removeAllCachedImages()
+        let selectionUploadManager = uploadManager
+        let outgoingRuntime = activeRuntime
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         isWorking = true
         notice = nil
         authenticationState = .restoring
         phase = .restoring
-        await uploadManager?.resetAfterCachePurge()
+        await selectionUploadManager?.resetAfterCachePurge()
+        // The reset drains cancelled tasks and suspends; a concurrent scene
+        // selection owns the shared manager after it resumes.
+        guard selectionEpoch == profileSelectionEpoch else { return }
         uploadManager = nil
         pendingAccountReplacement = nil
         pendingTerms = nil
@@ -412,8 +417,9 @@ final class AppModel {
             }
         }
 
-        if let repository = activeRuntime?.repository {
-            await repository.detachActiveStreams()
+        // Stream cleanup belongs to the runtime this selection replaced.
+        if let outgoingRepository = outgoingRuntime?.repository {
+            await outgoingRepository.detachActiveStreams()
         }
         guard selectionEpoch == profileSelectionEpoch else { return }
 
@@ -746,8 +752,12 @@ final class AppModel {
         authenticationState = .signedOut(selectedServer.id)
         await uploadManager?.resetAfterCachePurge()
         // The reset drains cancelled tasks and suspends; revalidate before
-        // mutating the shared selection state.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        // mutating the shared selection state. This stale sign-out owns the
+        // busy flag, so abandoning it must release that too.
+        guard selectionEpoch == profileSelectionEpoch else {
+            isWorking = false
+            return
+        }
         uploadManager = nil
         pendingAccountReplacement = nil
         pendingTerms = nil
@@ -795,12 +805,18 @@ final class AppModel {
         // advance so an in-flight sign-out for the removed profile cannot
         // overwrite the fresh .needsServer state afterwards.
         profileSelectionEpoch &+= 1
+        let transitionEpoch = profileSelectionEpoch
+        let outgoingRuntime = activeRuntime
+        let outgoingUploadManager = uploadManager
         cancelGenerationRecovery()
         generationRecoverySignal = nil
-        await activeRuntime?.repository.detachActiveStreams()
+        await outgoingRuntime?.repository.detachActiveStreams()
         activeRuntime = nil
-        await uploadManager?.resetAfterCachePurge()
+        await outgoingUploadManager?.resetAfterCachePurge()
         uploadManager = nil
+        // A concurrent profile selection owns the shared state after either
+        // suspension; this superseded transition must not clear it.
+        guard transitionEpoch == profileSelectionEpoch else { return }
         selectedServer = nil
         authenticationState = .needsServer
         compatibility = nil
@@ -879,20 +895,27 @@ final class AppModel {
     /// The app enables multiple scenes: generation streams and the lock are
     /// global, so teardown engages only when the LAST active scene resigns.
     private var activeSceneCount = 0
+    /// Advances on every scene transition so a stale inactive teardown can
+    /// never cancel streams that a foreground recovery just registered.
+    private var lifecycleGeneration = 0
 
     func sceneBecameActive() {
         activeSceneCount += 1
-        Task { await applicationBecameActive() }
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
+        Task { await applicationBecameActive(lifecycleGeneration: generation) }
     }
 
     func sceneResignedActive() {
         activeSceneCount = max(0, activeSceneCount - 1)
         guard activeSceneCount == 0 else { return }
         engageAppLockForInactiveScene()
-        Task { await applicationBecameInactive() }
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
+        Task { await applicationBecameInactive(lifecycleGeneration: generation) }
     }
 
-    func applicationBecameInactive() async {
+    func applicationBecameInactive(lifecycleGeneration generation: Int? = nil) async {
         isApplicationActive = false
         // The lock engages synchronously, before the first suspension point:
         // iOS can capture the app-switcher snapshot as soon as the scene
@@ -903,9 +926,12 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await activeRuntime?.repository.detachActiveStreams()
+        // A foregrounding that arrived while teardown was suspended owns the
+        // fresh recovery; the stale teardown must not cancel its streams.
+        if let generation, generation != lifecycleGeneration { return }
     }
 
-    func applicationBecameActive() async {
+    func applicationBecameActive(lifecycleGeneration generation: Int? = nil) async {
         isApplicationActive = true
         // SQLite can recreate -wal/-shm sidecars after the one-shot
         // exclusion; re-apply it on every activation so replacements never

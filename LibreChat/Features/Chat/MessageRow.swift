@@ -463,12 +463,7 @@ struct MessageContentView: View {
         case let .code(code):
             CodeBlock(language: code.language, code: code.code)
         case let .image(url, alternativeText):
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFit()
-            } placeholder: {
-                ProgressView().frame(minWidth: 120, minHeight: 80)
-            }
-            .accessibilityLabel(alternativeText ?? "Attached image")
+            BoundedMessageImage(url: url, alternativeText: alternativeText)
         case let .video(url, alternativeText):
             Link(destination: url) {
                 Label(alternativeText ?? "Open video", systemImage: "play.rectangle.fill")
@@ -598,4 +593,67 @@ struct MessageContentView: View {
 private final class CachedMarkdown {
     let value: AttributedString
     init(value: AttributedString) { self.value = value }
+}
+
+
+/// A message image that loads through the app's bounded fetch: declared-
+/// length and streaming byte caps, then a pixel-limited decode — an
+/// unbounded `AsyncImage` could exhaust bandwidth or memory on a hostile
+/// or oversized source.
+private struct BoundedMessageImage: View {
+    let url: URL
+    let alternativeText: String?
+
+    @State private var image: UIImage?
+
+    private static let maximumBytes = 25 * 1_048_576
+    private static let maximumPixel = 2_048
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                ProgressView()
+                    .frame(minWidth: 120, minHeight: 80)
+            }
+        }
+        .accessibilityLabel(alternativeText ?? "Attached image")
+        .task(id: url) {
+            image = await Self.load(from: url)
+        }
+    }
+
+    private static func load(from url: URL) async -> UIImage? {
+        guard let (bytes, response) = try? await URLSession.shared.bytes(for: URLRequest(url: url)) else {
+            return nil
+        }
+        if let http = response as? HTTPURLResponse,
+           http.expectedContentLength > maximumBytes {
+            return nil
+        }
+        var data = Data()
+        data.reserveCapacity(256 * 1_024)
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > maximumBytes { return nil }
+            }
+        } catch {
+            return nil
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixel,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
+    }
 }
