@@ -869,6 +869,10 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await purgeRuntime.repository.detachActiveStreams()
+        // Drain the manager before the purge deletes its namespace: a
+        // cancelled performUpload would otherwise recreate rows after the
+        // purge, and in-flight requests could continue through it.
+        await purgeUploadManager?.resetAfterCachePurge()
         do {
             try await dependencies.cache.purge(
                 profileID: purgeProfile.id,
@@ -879,7 +883,6 @@ final class AppModel {
             // in-memory state untouched.
             guard selectionEpoch == profileSelectionEpoch else { return }
             await purgeRuntime.repository.resetInMemoryState()
-            await purgeUploadManager?.resetAfterCachePurge()
             cacheEpoch = UUID()
             notice = "Saved cache cleared. LibreChat will reload this server's current data."
             if !isOffline, let repository = activeRuntime?.repository {
@@ -1070,6 +1073,20 @@ final class AppModel {
         guard let repository = activeRuntime?.repository else {
             throw LibreChatProtocolError.unauthorized
         }
+        // Relative content paths (message image_url) resolve against the
+        // selected server's origin.
+        if url.absoluteString.hasPrefix("/") {
+            guard let baseURL = selectedServer?.baseURL else {
+                throw LibreChatProtocolError.unauthorized
+            }
+            var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+            components?.path = url.path
+            components?.query = url.query
+            guard let absolute = components?.url else {
+                throw LibreChatProtocolError.invalidResponse
+            }
+            return try await repository.imageData(at: absolute)
+        }
         return try await repository.imageData(at: url)
     }
 
@@ -1244,9 +1261,19 @@ final class AppModel {
             runtime: runtime.protocolRuntime,
             cache: dependencies.cache
         )
+        // Install before restoring: a selection that supersedes this one
+        // during the suspending restore discovers the manager here and drains
+        // it, so no restored upload dispatches after ownership was lost.
+        self.uploadManager = uploadManager
+        do {
+            try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
+        } catch {
+            await uploadManager.resetAfterCachePurge()
+            self.uploadManager = nil
+            throw error
+        }
         await uploadManager.restore()
         try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
-        self.uploadManager = uploadManager
         try await dependencies.cache.saveAccount(profileID: profile.id, account: resolvedUser)
         try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
         try await dependencies.cache.save(profile: profile, selected: true)

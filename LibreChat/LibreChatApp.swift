@@ -23,6 +23,9 @@ struct LibreChatApp: App {
         WindowGroup {
             AppRootView(model: model)
                 .modelContainer(dependencies.modelContainer)
+                .environment(\.fetchServerImage, ServerImageFetchAction { url in
+                    try? await model.imageData(at: url)
+                })
                 .onChange(of: scenePhase) { oldPhase, newPhase in
                     // One transition emits .inactive then .background; only
                     // the active→inactive edge may count, or a single scene
