@@ -19,6 +19,10 @@ public struct SharedSnapshotFileDTO: Decodable, Equatable, Sendable {
         guard let fileID = fileID?.nonEmpty else {
             throw DTOMapperError.missingRequiredField("sharedSnapshot.file_id")
         }
+        // Dot-only ids normalize the access path onto a parent share route.
+        guard sharedFileIDAcceptable(fileID) else {
+            throw DTOMapperError.invalidField("sharedSnapshot.file_id")
+        }
         let sharedFileID = SharedFileID(rawValue: fileID)
         return SharedSnapshotFile(
             id: sharedFileID,
@@ -312,4 +316,9 @@ public enum LibreChatSharedSnapshotsAPI {
             retryPolicy: .never
         )
     }
+}
+
+
+private func sharedFileIDAcceptable(_ value: String) -> Bool {
+    value != "." && value != ".."
 }

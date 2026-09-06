@@ -119,7 +119,7 @@ struct SettingsView: View {
                 } label: {
                     Label("Projects", systemImage: "folder")
                 }
-                .disabled(appModel.isOffline)
+                .disabled(appModel.isOffline || !appModel.canUseProjects)
 
                 NavigationLink {
                     FileLibraryView(appModel: appModel, repository: repository)

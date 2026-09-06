@@ -623,13 +623,13 @@ private struct BoundedMessageImage: View {
         }
         .accessibilityLabel(alternativeText ?? "Attached image")
         .task(id: url) {
-            // Protected/relative content rides the app's authenticated,
-            // bounded pipeline; only unmatched absolute URLs fall back to a
-            // direct bounded fetch.
+            // All content rides the app's authenticated, bounded pipeline:
+            // relative and same-origin URLs use the profile transport, and
+            // cross-origin URLs use the bounded external branch. A direct
+            // URLSession fallback would drop cookies/UA and can trip the
+            // server's non-browser policy.
             if let data = try? await fetchServerImage(url) {
                 image = Self.downsampled(data)
-            } else if url.absoluteString.hasPrefix("http") {
-                image = await Self.load(from: url)
             }
         }
     }

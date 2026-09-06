@@ -11,7 +11,13 @@ struct FileLibraryView: View {
     init(appModel: AppModel, repository: any FileLibraryRepository) {
         let isOffline: @MainActor () -> Bool = { appModel.isOffline }
         let originatingProfileID = appModel.selectedServer?.id
-        let onUnauthorized: @MainActor () async -> Void = { await appModel.expireSession(for: originatingProfileID) }
+        let originatingAccountID = appModel.user?.id
+        let onUnauthorized: @MainActor () async -> Void = {
+            await appModel.expireSession(
+                for: originatingProfileID,
+                originatingAccountID: originatingAccountID
+            )
+        }
         self.repository = repository
         self.isOffline = isOffline
         self.onUnauthorized = onUnauthorized

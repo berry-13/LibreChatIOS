@@ -278,6 +278,15 @@ final class AppModel {
     var canUsePrompts: Bool {
         !isOffline && promptPermissions?.use == true
     }
+    /// Projects are deployment-gated: deployments without the feature (or
+    /// in the fail-closed state after an authenticated refresh failure) must
+    /// not present the Projects UI or preload `/api/projects`.
+    var canUseProjects: Bool {
+        let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
+        return !isOffline
+            && capabilities?.authenticatedPolicyVerified == true
+            && capabilities?.supportsProjects == true
+    }
     var canUsePresets: Bool {
         let capabilities = compatibility?.capabilities ?? selectedServer?.capabilities
         return !isOffline
@@ -596,6 +605,14 @@ final class AppModel {
         isWorking = true
         notice = nil
         defer { isWorking = false }
+        // Cookie replacement must happen only after ownership is confirmed:
+        // a scene switching to another profile during the landing callback
+        // would otherwise get A's harvested cookies installed over B's jar.
+        try validateBrowserAuthenticationContext(
+            profileID: profile.id,
+            runtime: runtime,
+            selectionEpoch: selectionEpoch
+        )
         try await runtime.protocolRuntime.cookieJar.replace(with: cookies)
         try validateBrowserAuthenticationContext(
             profileID: profile.id,
@@ -973,6 +990,12 @@ final class AppModel {
             validating: { [weak self] in self?.lifecycleGeneration == generation }
         )
         if let generation, generation != lifecycleGeneration { return }
+        // Checkpointing can have (re)created SQLite sidecars; re-apply their
+        // backup exclusion while inactive/background — the state in which
+        // iCloud backups actually run.
+        AppDependencies.excludePrivateDataFromBackups(
+            storeURL: AppDependencies.defaultCacheStoreURL
+        )
     }
 
     func applicationBecameActive(lifecycleGeneration generation: Int? = nil) async {
@@ -1160,6 +1183,7 @@ final class AppModel {
         }
 
         let selectionEpoch = profileSelectionEpoch
+        let originatingAccountID = accountID
         try await runtime.repository.deleteAccount(proof: proof)
         try ensureCurrent(runtime: runtime, selectionEpoch: selectionEpoch)
 
@@ -1180,12 +1204,15 @@ final class AppModel {
         await runtime.repository.resetInMemoryState()
         // Cleanup suspended past the earlier epoch check: if another scene
         // selected a different profile meanwhile, the deleted account's
-        // manager must be torn down — but never the new profile's.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        // manager must be torn down — but never the new profile's, and never
+        // when a different account was installed on this same profile.
+        guard selectionEpoch == profileSelectionEpoch,
+              selectedServer?.accountIdentifier == originatingAccountID else { return }
         await uploadManager?.resetAfterCachePurge()
         // The reset drains cancelled upload tasks and suspends; revalidate
         // before the global mutations.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        guard selectionEpoch == profileSelectionEpoch,
+              selectedServer?.accountIdentifier == originatingAccountID else { return }
         uploadManager = nil
         profile.accountIdentifier = nil
         if let capabilities = profile.capabilities {

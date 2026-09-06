@@ -209,6 +209,7 @@ struct ChatView: View {
     private let canUseVoiceDictation: @MainActor () -> Bool
     private let canUseReadAloud: @MainActor () -> Bool
     private let canUseBookmarks: @MainActor () -> Bool
+    private let canUseProjects: @MainActor () -> Bool
     private let isOffline: @MainActor () -> Bool
     private let promptUserName: String?
     private let temporaryChatPolicy: TemporaryChatPolicy?
@@ -235,6 +236,7 @@ struct ChatView: View {
         canUseVoiceDictation: @escaping @MainActor () -> Bool,
         canUseReadAloud: @escaping @MainActor () -> Bool,
         canUseBookmarks: @escaping @MainActor () -> Bool = { false },
+        canUseProjects: @escaping @MainActor () -> Bool = { false },
         isOffline: @escaping @MainActor () -> Bool,
         promptUserName: String?,
         temporaryChatPolicy: TemporaryChatPolicy? = nil,
@@ -260,6 +262,7 @@ struct ChatView: View {
         self.canUseVoiceDictation = canUseVoiceDictation
         self.canUseReadAloud = canUseReadAloud
         self.canUseBookmarks = canUseBookmarks
+        self.canUseProjects = canUseProjects
         self.isOffline = isOffline
         self.promptUserName = promptUserName
         self.onUnauthorized = onUnauthorized
@@ -665,6 +668,7 @@ struct ChatView: View {
                 repository: repository,
                 isOffline: isOffline(),
                 canUseBookmarks: canUseBookmarks(),
+                canUseProjects: canUseProjects(),
                 onUnauthorized: onUnauthorized
             )
         }

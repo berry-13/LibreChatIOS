@@ -38,7 +38,7 @@ struct AgentsView: View {
             creationRepository: repository,
             isOffline: { appModel.isOffline },
             creationEnabled: { appModel.canCreateAgents },
-            onUnauthorized: { await appModel.expireSession(for: originatingProfileID) }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 
@@ -623,7 +623,7 @@ private struct AgentDetailView: View {
             id: summary.id,
             repository: repository,
             managementRepository: repository,
-            onUnauthorized: { await appModel.expireSession(for: originatingProfileID) }
+            onUnauthorized: appModel.expireSessionCallback()
         ))
     }
 
