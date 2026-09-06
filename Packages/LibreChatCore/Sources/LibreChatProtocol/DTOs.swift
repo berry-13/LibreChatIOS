@@ -1,6 +1,13 @@
 import Foundation
 import LibreChatDomain
 
+/// Megabyte→byte conversions for server-supplied size limits must not
+/// overflow Int64: a hostile config value would trap the process.
+func clampedMegabytes(_ megabytes: Int64) -> Int64 {
+    let maximum = Int64.max / (1_048_576)
+    return min(max(megabytes, 0), maximum)
+}
+
 public enum DTOMapperError: Error, Equatable, Sendable {
     case missingRequiredField(String)
     case invalidField(String)
@@ -385,10 +392,10 @@ public struct FileConfigurationDTO: Codable, Equatable, Sendable {
                 merged.disabled = dynamic.disabled ?? merged.disabled
                 merged.fileLimit = dynamic.fileLimit ?? merged.fileLimit
                 if let fileSizeLimit = dynamic.fileSizeLimit {
-                    merged.fileSizeLimit = fileSizeLimit * megabyte
+                    merged.fileSizeLimit = clampedMegabytes(fileSizeLimit)
                 }
                 if let totalSizeLimit = dynamic.totalSizeLimit {
-                    merged.totalSizeLimit = totalSizeLimit * megabyte
+                    merged.totalSizeLimit = clampedMegabytes(totalSizeLimit)
                 }
                 merged.supportedMimeTypes = dynamic.supportedMimeTypes ?? merged.supportedMimeTypes
             }
@@ -414,8 +421,8 @@ public struct FileConfigurationDTO: Codable, Equatable, Sendable {
 
         return FileConfigurationDTO(
             endpoints: mergedEndpoints,
-            serverFileSizeLimit: (serverFileSizeLimit ?? defaultSizeLimit / megabyte) * megabyte,
-            avatarSizeLimit: (avatarSizeLimit ?? 2) * megabyte,
+            serverFileSizeLimit: clampedMegabytes(serverFileSizeLimit ?? defaultSizeLimit / megabyte),
+            avatarSizeLimit: clampedMegabytes(avatarSizeLimit ?? 2),
             clientImageResize: mergedResize
         )
     }

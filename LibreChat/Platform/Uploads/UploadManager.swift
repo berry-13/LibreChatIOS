@@ -188,10 +188,7 @@ actor UploadManager: UploadRepository {
             appropriateFor: nil,
             create: true
         )
-        let directory = root
-            .appending(path: "Uploads", directoryHint: .isDirectory)
-            .appending(path: profileID.rawValue, directoryHint: .isDirectory)
-            .appending(path: Self.safePathComponent(accountID.rawValue), directoryHint: .isDirectory)
+        let directory = Self.stagingDirectory(profileID: profileID, accountID: accountID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let id = UUID()
         let localURL = directory.appending(path: "\(id.uuidString)-\(sanitized)")
@@ -948,6 +945,22 @@ actor UploadManager: UploadRepository {
               let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
               width > 0, height > 0 else { return nil }
         return (width, height)
+    }
+
+    /// The staging directory for one profile/account namespace, using the
+    /// same safe-name encoding as `stage`.
+    static func stagingDirectory(profileID: ServerProfileID, accountID: AccountID) -> URL {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "Uploads", directoryHint: .isDirectory)
+        return root
+            .appending(path: safePathComponent(profileID.rawValue), directoryHint: .isDirectory)
+            .appending(path: safePathComponent(accountID.rawValue), directoryHint: .isDirectory)
+    }
+
+    /// Removes the entire staged-attachment namespace for one profile/account
+    /// (including orphaned files whose SwiftData row was never persisted).
+    static func removeStagingDirectory(profileID: ServerProfileID, accountID: AccountID) {
+        try? FileManager.default.removeItem(at: stagingDirectory(profileID: profileID, accountID: accountID))
     }
 
     /// Server-supplied account identifiers are opaque strings, never path
