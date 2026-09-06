@@ -782,6 +782,7 @@ final class AppModel {
         await signingOutRuntime.protocolRuntime.authSession.logout()
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
+            UploadManager.removeStagingDirectory(profileID: selectedServer.id, accountID: accountID)
             UnsentCanvasManifestStore.removeAll(
                 profileID: selectedServer.id.rawValue,
                 accountID: accountID.rawValue
@@ -849,6 +850,7 @@ final class AppModel {
         guard selectedServer.accountIdentifier == effectiveAccountID else { return }
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
+            UploadManager.removeStagingDirectory(profileID: selectedServer.id, accountID: accountID)
             UnsentCanvasManifestStore.removeAll(
                 profileID: selectedServer.id.rawValue,
                 accountID: accountID.rawValue
@@ -1226,6 +1228,7 @@ final class AppModel {
             profileID: profile.id.rawValue,
             accountID: accountID.rawValue
         )
+        UploadManager.removeStagingDirectory(profileID: profile.id, accountID: accountID)
         await runtime.repository.resetInMemoryState()
         // Cleanup suspended past the earlier epoch check: if another scene
         // selected a different profile meanwhile, the deleted account's
