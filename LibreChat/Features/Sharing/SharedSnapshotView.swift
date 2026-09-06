@@ -119,6 +119,16 @@ final class SharedSnapshotModel {
                 forkOutcomeMayBeAmbiguous = true
                 forkUnavailableReason = "The connection ended before LibreChat confirmed the copy. It may already exist, so refresh your chat list before trying again."
                 return nil
+            case .serverNotReady, .decoding, .invalidResponse:
+                // A committed copy can hide behind any post-dispatch failure;
+                // retry stays locked until the chat list is reconciled.
+                forkOutcomeMayBeAmbiguous = true
+                forkUnavailableReason = "LibreChat's response was lost or unreadable. The copy may already exist, so refresh your chat list before trying again."
+                return nil
+            case let .httpStatus(status, _, _) where (500...599).contains(status):
+                forkOutcomeMayBeAmbiguous = true
+                forkUnavailableReason = "LibreChat failed after accepting the copy request. It may already exist, so refresh your chat list before trying again."
+                return nil
             default:
                 if error.isUnauthorized { await onUnauthorized() }
                 operationError = error.userFacingMessage
@@ -131,6 +141,12 @@ final class SharedSnapshotModel {
             guard !(error is CancellationError) else {
                 forkOutcomeMayBeAmbiguous = true
                 forkUnavailableReason = "The copy request was interrupted. It may already exist, so refresh your chat list before trying again."
+                return nil
+            }
+            // A malformed success body is equally ambiguous.
+            if error is DTOMapperError {
+                forkOutcomeMayBeAmbiguous = true
+                forkUnavailableReason = "LibreChat's response was unreadable. The copy may already exist, so refresh your chat list before trying again."
                 return nil
             }
             operationError = error.userFacingMessage

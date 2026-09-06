@@ -406,8 +406,13 @@ final class AppModel {
         phase = .restoring
         await selectionUploadManager?.resetAfterCachePurge()
         // The reset drains cancelled tasks and suspends; a concurrent scene
-        // selection owns the shared manager after it resumes.
-        guard selectionEpoch == profileSelectionEpoch else { return }
+        // selection owns the shared manager after it resumes. This stale
+        // selection owns the busy flag, so abandoning it must release that
+        // too (the defer intentionally skips it).
+        guard selectionEpoch == profileSelectionEpoch else {
+            isWorking = false
+            return
+        }
         uploadManager = nil
         pendingAccountReplacement = nil
         pendingTerms = nil
@@ -717,8 +722,14 @@ final class AppModel {
         generationRecoverySignal = nil
         ServerEntityImageStore.removeAllCachedImages()
         FileImagePreviewStore.removeAllCachedImages()
-        await activeRuntime?.protocolRuntime.authSession.logout()
-        if let profileID = selectedServer?.id {
+        let cancellingRuntime = activeRuntime
+        let cancellingProfileID = selectedServer?.id
+        let selectionEpoch = profileSelectionEpoch
+        await cancellingRuntime?.protocolRuntime.authSession.logout()
+        // A profile selected while the logout was suspended owns the shared
+        // state; the stale cancellation must not sign it out.
+        guard selectionEpoch == profileSelectionEpoch else { return }
+        if let profileID = cancellingProfileID {
             authenticationState = .signedOut(profileID)
         }
         phase = .signedOut

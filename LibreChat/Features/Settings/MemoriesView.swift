@@ -13,6 +13,11 @@ struct MemoriesView: View {
         permissions: MemoryPermissions
     ) {
         self.appModel = appModel
+        // Ownership is bound at construction, while this view's repository
+        // and profile are still the originating ones — a callback that reads
+        // globals later would capture a successor scene's identity.
+        let memoryProfileID = appModel.selectedServer?.id
+        let memoryAccountID = appModel.user?.id
         _model = State(initialValue: MemoryCenterModel(
             repository: repository,
             permissions: permissions,
@@ -20,12 +25,10 @@ struct MemoriesView: View {
             isOffline: { appModel.isOffline },
             onUnauthorized: appModel.expireSessionCallback(),
             onPreferenceChanged: { enabled in
-                let profileID = appModel.selectedServer?.id
-                let accountID = appModel.user?.id
                 await appModel.recordMemoriesEnabled(
                     enabled,
-                    profileID: profileID,
-                    accountID: accountID
+                    profileID: memoryProfileID,
+                    accountID: memoryAccountID
                 )
             }
         ))
