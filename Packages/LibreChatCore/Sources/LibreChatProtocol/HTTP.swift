@@ -873,13 +873,23 @@ public actor RESTClient {
                 body: nil
             )
             if request.authorization == .bearer {
+                var credential: AuthorizationCredential?
                 do {
-                    let credential = try await authSession.authorizationCredential()
-                    urlRequest.setValue(credential.headerValue, forHTTPHeaderField: "Authorization")
+                    // Bind the credential before the request build: the
+                    // cookie-jar round-trip is a suspension across which a
+                    // same-profile account replacement could swap sessions.
+                    credential = try await authSession.authorizationCredential()
+                    urlRequest.setValue(credential!.headerValue, forHTTPHeaderField: "Authorization")
                 } catch LibreChatProtocolError.unauthorized where !refreshed {
                     _ = try await authSession.refresh(ifRejected: nil)
                     refreshed = true
                     continue
+                }
+                // Superseded credential: refuse to dispatch A's operation
+                // under B's account.
+                let dispatched = try? await authSession.authorizationCredential()
+                guard let dispatched, dispatched.headerValue == credential?.headerValue else {
+                    throw LibreChatProtocolError.unauthorized
                 }
             }
             let response = try await transport.executeUpload(
@@ -920,13 +930,23 @@ public actor RESTClient {
                 body: nil
             )
             if request.authorization == .bearer {
+                var credential: AuthorizationCredential?
                 do {
-                    let credential = try await authSession.authorizationCredential()
-                    urlRequest.setValue(credential.headerValue, forHTTPHeaderField: "Authorization")
+                    // Bind the credential before the request build: the
+                    // cookie-jar round-trip is a suspension across which a
+                    // same-profile account replacement could swap sessions.
+                    credential = try await authSession.authorizationCredential()
+                    urlRequest.setValue(credential!.headerValue, forHTTPHeaderField: "Authorization")
                 } catch LibreChatProtocolError.unauthorized where !refreshed {
                     _ = try await authSession.refresh(ifRejected: nil)
                     refreshed = true
                     continue
+                }
+                // Superseded credential: refuse to dispatch A's operation
+                // under B's account.
+                let dispatched = try? await authSession.authorizationCredential()
+                guard let dispatched, dispatched.headerValue == credential?.headerValue else {
+                    throw LibreChatProtocolError.unauthorized
                 }
             }
             let response = try await transport.executeUpload(
