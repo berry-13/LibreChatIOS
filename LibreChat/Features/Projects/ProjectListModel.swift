@@ -214,12 +214,18 @@ final class ProjectListModel {
             // Transport, cancellation, and malformed-success outcomes leave
             // the request's fate unknown; a retry may duplicate the project.
             switch error as? LibreChatProtocolError {
-            case .transport, .decoding, .invalidResponse:
+            case .transport, .decoding, .invalidResponse, .serverNotReady:
+                isCreationOutcomeUnknown = true
+            case let .httpStatus(status, _, _) where (500...599).contains(status):
                 isCreationOutcomeUnknown = true
             default:
                 break
             }
-            if error is CancellationError { isCreationOutcomeUnknown = true }
+            // A committed create can also hide behind a malformed 2xx body or
+            // a cancellation after dispatch.
+            if error is CancellationError || error is DTOMapperError {
+                isCreationOutcomeUnknown = true
+            }
             if isCreationOutcomeUnknown { attemptedCreateName = trimmedName }
             await handle(error)
             return nil

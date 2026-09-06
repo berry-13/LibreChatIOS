@@ -331,6 +331,8 @@ final class ConversationListModel {
         listingRevision &+= 1
         do {
             try await repository.delete(id: conversation.id)
+            // The confirmed DELETE supersedes listings captured before it.
+            listingRevision &+= 1
             conversations.removeAll { $0.id == conversation.id }
         } catch {
             if error.isUnauthorized { await onUnauthorized() }

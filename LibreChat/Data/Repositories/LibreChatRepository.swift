@@ -1584,6 +1584,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         let localURL = staging.appending(path: UUID().uuidString)
         try Data().write(to: localURL)
+        defer { try? FileManager.default.removeItem(at: localURL) }
         let handle = try FileHandle(forWritingTo: localURL)
         do {
             var buffered = Data()
@@ -1854,8 +1855,13 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
     }
 
     func conversation(id: ConversationID) async throws -> LibreChatDomain.Conversation {
+        // The conversation id is server data; passing the route as validated
+        // path components keeps a hostile value ('/', '.', '..') from
+        // splitting or normalizing it during chat and mutation
+        // reconciliation. `path` remains the classification label.
         let request = APIRequest<LibreChatConversationDTO>(
             path: "api/convos/\(id.rawValue)",
+            pathComponents: ["api", "convos", id.rawValue],
             retryPolicy: .idempotent(maximumAttempts: 2)
         )
         var conversation = try await runtime.restClient.send(request).domainModel()

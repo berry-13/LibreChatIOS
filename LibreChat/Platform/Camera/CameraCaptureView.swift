@@ -154,29 +154,35 @@ struct CameraPhotoEncoder {
             throw CameraCaptureFailure.encodingFailed
         }
 
-        let longestSide = max(image.size.width, image.size.height)
-        let scale = min(1, maximumPixelDimension / longestSide)
-        let outputSize = CGSize(
-            width: max(1, (image.size.width * scale).rounded()),
-            height: max(1, (image.size.height * scale).rounded())
-        )
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        let normalized = UIGraphicsImageRenderer(size: outputSize, format: format).image { context in
-            UIColor.black.setFill()
-            context.fill(CGRect(origin: .zero, size: outputSize))
-            image.draw(in: CGRect(origin: .zero, size: outputSize))
-        }
-        guard let data = normalized.jpegData(compressionQuality: compressionQuality), !data.isEmpty else {
+        // Encoding the original first lets ImageIO decode a bounded
+        // thumbnail: drawing the full-resolution bitmap into the 4096-pixel
+        // destination keeps both images resident (hundreds of MB on 48 MP
+        // sensors).
+        guard let originalData = image.jpegData(compressionQuality: 0.92),
+              let source = CGImageSourceCreateWithData(originalData as CFData, nil) else {
             throw CameraCaptureFailure.encodingFailed
         }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maximumPixelDimension),
+        ]
+        guard let cgThumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw CameraCaptureFailure.encodingFailed
+        }
+        // The thumbnail carries the EXIF transform; report its pixels.
+        let thumbnail = UIImage(cgImage: cgThumbnail)
+        guard let data = thumbnail.jpegData(compressionQuality: compressionQuality), !data.isEmpty else {
+            throw CameraCaptureFailure.encodingFailed
+        }
+        let pixelWidth = Int((thumbnail.size.width * thumbnail.scale).rounded())
+        let pixelHeight = Int((thumbnail.size.height * thumbnail.scale).rounded())
         return CapturedCameraPhoto(
             data: data,
             filename: "camera-\(identifier.uuidString.lowercased()).jpg",
             mimeType: UTType.jpeg.preferredMIMEType ?? "image/jpeg",
-            pixelWidth: Int(outputSize.width),
-            pixelHeight: Int(outputSize.height)
+            pixelWidth: pixelWidth > 0 ? pixelWidth : Int(maximumPixelDimension),
+            pixelHeight: pixelHeight > 0 ? pixelHeight : Int(maximumPixelDimension)
         )
     }
 }

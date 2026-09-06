@@ -491,10 +491,10 @@ public actor HTTPTransport {
     /// The returned URL has a random name and contains no server/profile/file
     /// identifiers. Error bodies are interpreted later by `RESTClient` and the
     /// staging file is removed on every failed or retried attempt.
-    /// Largest body a file download may stage, covering entity images and
-    /// library files: a hostile server must not be able to fill temporary
-    /// storage with an unbounded response.
-    static let maximumStagedDownloadBytes = 64 * 1_048_576
+    /// Largest body a file download may stage. The composer accepts 200 MiB
+    /// imports and the upload contract allows 512 MiB server-side, so the
+    /// bound must cover files the app itself accepts, not just images.
+    static let maximumStagedDownloadBytes = 256 * 1_048_576
 
     public func executeDownload(
         _ request: URLRequest,
