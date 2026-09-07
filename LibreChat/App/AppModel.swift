@@ -393,6 +393,9 @@ final class AppModel {
         guard selectionEpoch == profileSelectionEpoch else { return }
         profile.capabilities = compatibility.capabilities
         try await dependencies.cache.save(profile: profile, selected: true)
+        // The save itself suspends; ownership must be revalidated before the
+        // shared selection state is committed.
+        guard selectionEpoch == profileSelectionEpoch else { return }
 
         profiles.removeAll { $0.id == profile.id }
         profiles.insert(profile, at: 0)
@@ -847,10 +850,11 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await expiringRuntime.repository.detachActiveStreams()
-        // Ownership can also change across this suspension.
-        guard selectedServer.accountIdentifier == effectiveAccountID else { return }
+        // Ownership can also change across each suspension: read the LIVE
+        // selection, not the entry-time snapshot.
+        guard self.selectedServer?.accountIdentifier == effectiveAccountID else { return }
         try? await expiringRuntime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
-        guard selectedServer.accountIdentifier == effectiveAccountID else { return }
+        guard self.selectedServer?.accountIdentifier == effectiveAccountID else { return }
         if let accountID = selectedServer.accountIdentifier {
             await hideCache(profileID: selectedServer.id, accountID: accountID)
             UploadManager.removeStagingDirectory(profileID: selectedServer.id, accountID: accountID)
@@ -949,7 +953,10 @@ final class AppModel {
                   self.selectedServer?.accountIdentifier == originatingAccountID else { return }
             cacheEpoch = UUID()
             notice = "Saved cache cleared. LibreChat will reload this server's current data."
-            if !isOffline, let repository = activeRuntime?.repository {
+            // Recovery belongs to the purged namespace's repository, bound to
+            // its captured profile/account — never to the current selection.
+            purgeRuntime.repository.resetInMemoryState()
+            if !isOffline, repository === purgeRuntime.repository {
                 startGenerationRecovery(
                     repository: repository,
                     profileID: selectedServer.id,
@@ -1035,15 +1042,21 @@ final class AppModel {
         // exclusion; re-apply it on every activation so replacements never
         // stay backup-eligible.
         AppDependencies.excludePrivateDataFromBackups(storeURL: AppDependencies.defaultCacheStoreURL)
-        guard phase == .signedIn, !isOffline, let repository = activeRuntime?.repository else { return }
+        guard phase == .signedIn, !isOffline,
+              let activatingRuntime = activeRuntime,
+              let activatingProfileID = selectedServer?.id,
+              let activatingAccountID = selectedServer?.accountIdentifier else { return }
         await uploadManager?.applicationBecameActive()
-        // Re-check: the upload-manager round-trip is a suspension point.
-        guard generation == nil || generation == lifecycleGeneration else { return }
+        // A profile/account switch across this suspension owns the fresh
+        // recovery; the stale activation must not restart work for it.
+        guard activeRuntime === activatingRuntime,
+              selectedServer?.id == activatingProfileID,
+              selectedServer?.accountIdentifier == activatingAccountID else { return }
         AppLog.generation.info("Application became active; starting generation reconciliation.")
         startGenerationRecovery(
-            repository: repository,
-            profileID: selectedServer?.id,
-            accountID: selectedServer?.accountIdentifier,
+            repository: activatingRuntime.repository,
+            profileID: activatingProfileID,
+            accountID: activatingAccountID,
             publishToVisibleChat: true
         )
     }

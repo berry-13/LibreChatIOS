@@ -255,7 +255,7 @@ struct InAppOAuthSheet: View {
                     OAuthWebView(
                         startURL: startURL,
                         oauthPathPrefix: OAuthWebView.oauthPathPrefix(for: startURL),
-                        host: profile.baseURL.host ?? "",
+                        origin: OAuthWebView.originString(for: profile.baseURL),
                         onLanding: { cookies in
                             dismiss()
                             onSessionCookies(cookies)
@@ -299,9 +299,20 @@ private struct OAuthWebView: UIViewRepresentable {
     /// `startURL` so deployments served beneath a subpath (`/librechat`)
     /// are recognized too.
     let oauthPathPrefix: String
-    let host: String
+    /// Origin (scheme://host[:port]) of the deployment: the landing check
+    /// must match scheme and port too, so an identity provider hosted on the
+    /// same hostname at a different port is never mistaken for the landing.
+    let origin: String
     let onLanding: @MainActor ([StoredCookie]) -> Void
     let onFailure: @MainActor () -> Void
+
+    static func originString(for url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.query = nil
+        components?.fragment = nil
+        components?.path = "/"
+        return components?.string ?? url.absoluteString
+    }
 
     static func oauthPathPrefix(for startURL: URL) -> String {
         var prefix = startURL.deletingLastPathComponent().path
@@ -359,7 +370,7 @@ private struct OAuthWebView: UIViewRepresentable {
                 // must never harvest cookies or fire onLanding twice.
                 if sawOAuthHop,
                    !isOAuthPath,
-                   url.host?.lowercased() == parent.host.lowercased(),
+                   Self.matchesLandingOrigin(url: url, origin: parent.origin),
                    navigationAction.targetFrame?.isMainFrame == true,
                    !completing {
                     completing = true
@@ -369,6 +380,14 @@ private struct OAuthWebView: UIViewRepresentable {
                 }
             }
             decisionHandler(.allow)
+        }
+
+        static func matchesLandingOrigin(url: URL, origin: String) -> Bool {
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.query = nil
+            components?.fragment = nil
+            components?.path = "/"
+            return components?.string == origin
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
