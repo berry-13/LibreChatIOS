@@ -57,7 +57,12 @@ public enum JSONValue: Codable, Equatable, Hashable, Sendable {
         guard case let .number(value) = self else { return nil }
         // A valid JSON number can sit far outside platform Int bounds
         // (e.g. 1e100); Int(value) would trap instead of returning nil.
-        guard value.isFinite, value >= Double(Int.min), value <= Double(Int.max) else {
+        // Double(Int.max) rounds UP to 2^63, so the inclusive upper bound
+        // would admit values that trap Int(value). Use the strictly smaller
+        // power of two as an overflow-safe bound.
+        guard value.isFinite,
+              value >= Double(Int.min),
+              value < 9_223_372_036_854_775_808.0 else {
             return nil
         }
         return Int(value)

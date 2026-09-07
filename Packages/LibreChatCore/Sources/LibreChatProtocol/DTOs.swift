@@ -5,7 +5,10 @@ import LibreChatDomain
 /// overflow Int64: a hostile config value would trap the process.
 func clampedMegabytes(_ megabytes: Int64) -> Int64 {
     let maximum = Int64.max / (1_048_576)
-    return min(max(megabytes, 0), maximum)
+    let clamped = min(max(megabytes, 0), maximum)
+    // Callers treat the result as bytes: multiply the clamped megabyte
+    // count into bytes (cannot overflow given the clamp above).
+    return clamped * 1_048_576
 }
 
 public enum DTOMapperError: Error, Equatable, Sendable {

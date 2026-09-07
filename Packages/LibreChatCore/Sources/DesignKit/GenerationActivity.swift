@@ -154,7 +154,9 @@ public struct GenerationActivityItem: Identifiable, Equatable, Hashable, Sendabl
         guard let duration, duration.isFinite, duration >= 0 else { return nil }
         if duration < 1 { return "Under 1 second" }
         // Clamp before conversion: absurd server durations must not trap.
-        let seconds = min(Int(duration.rounded()), 86_400 * 365)
+        // Clamp the Double BEFORE converting: values like 1e100 pass the
+        // finiteness check but would trap Int(duration.rounded()).
+        let seconds = Int(min(duration.rounded(), 31_536_000))
         if seconds < 60 { return seconds == 1 ? "1 second" : "\(seconds) seconds" }
         let minutes = seconds / 60
         let remainder = seconds % 60
