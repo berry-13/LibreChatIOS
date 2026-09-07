@@ -151,9 +151,10 @@ public struct GenerationActivityItem: Identifiable, Equatable, Hashable, Sendabl
     }
 
     public var durationLabel: String? {
-        guard let duration else { return nil }
+        guard let duration, duration.isFinite, duration >= 0 else { return nil }
         if duration < 1 { return "Under 1 second" }
-        let seconds = Int(duration.rounded())
+        // Clamp before conversion: absurd server durations must not trap.
+        let seconds = min(Int(duration.rounded()), 86_400 * 365)
         if seconds < 60 { return seconds == 1 ? "1 second" : "\(seconds) seconds" }
         let minutes = seconds / 60
         let remainder = seconds % 60

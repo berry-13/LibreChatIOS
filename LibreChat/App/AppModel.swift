@@ -777,7 +777,8 @@ final class AppModel {
         await signingOutRuntime.repository.detachActiveStreams()
         // A same-profile account replacement during the detach suspension
         // owns the shared session; the stale sign-out must not log it out.
-        guard selectedServer.accountIdentifier == originatingAccountID else {
+        // Compare the LIVE selection, not the entry-time snapshot.
+        guard self.selectedServer?.accountIdentifier == originatingAccountID else {
             isWorking = false
             return
         }
@@ -944,8 +945,8 @@ final class AppModel {
             // in-memory state untouched. Account replacement on the same
             // profile does not advance the epoch, hence the explicit check.
             guard selectionEpoch == profileSelectionEpoch,
-                  purgeProfile.accountIdentifier == originatingAccountID else { return }
-            await purgeRuntime.repository.resetInMemoryState()
+                  purgeProfile.accountIdentifier == originatingAccountID,
+                  self.selectedServer?.accountIdentifier == originatingAccountID else { return }
             cacheEpoch = UUID()
             notice = "Saved cache cleared. LibreChat will reload this server's current data."
             if !isOffline, let repository = activeRuntime?.repository {
@@ -998,6 +999,9 @@ final class AppModel {
     }
 
     func applicationBecameInactive(lifecycleGeneration generation: Int? = nil) async {
+        // A stale inactive callback (superseded by a newer transition) must
+        // not flip the app inactive or cancel the foreground recovery.
+        guard generation == nil || generation == lifecycleGeneration else { return }
         isApplicationActive = false
         // The lock engages synchronously, before the first suspension point:
         // iOS can capture the app-switcher snapshot as soon as the scene
@@ -1219,7 +1223,13 @@ final class AppModel {
         cancelGenerationRecovery()
         generationRecoverySignal = nil
         await runtime.repository.detachActiveStreams()
+        // A same-profile account replacement across this suspension owns the
+        // shared session; the stale deletion must not clear its credentials.
+        guard selectionEpoch == profileSelectionEpoch,
+              self.selectedServer?.accountIdentifier == originatingAccountID else { return }
         try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
+        guard selectionEpoch == profileSelectionEpoch,
+              self.selectedServer?.accountIdentifier == originatingAccountID else { return }
         do {
             try await dependencies.cache.purge(profileID: profile.id, accountID: accountID)
         } catch {
