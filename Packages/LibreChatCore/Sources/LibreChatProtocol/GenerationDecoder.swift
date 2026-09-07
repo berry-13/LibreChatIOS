@@ -541,7 +541,13 @@ public struct LibreChatGenerationDecoder: Sendable {
     }
 
     private func int64(_ value: JSONValue?) -> Int64? {
-        value?.doubleValue.map(Int64.init)
+        // Mirror JSONValue.intValue: reject non-finite and out-of-bounds
+        // doubles so a hostile steer event cannot trap Int64 conversion.
+        guard let double = value?.doubleValue, double.isFinite,
+              double >= Double(Int64.min), double <= Double(Int64.max) else {
+            return nil
+        }
+        return Int64(double)
     }
 
     private func runStep(from object: [String: JSONValue]) -> RunStep? {
