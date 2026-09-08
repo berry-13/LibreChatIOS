@@ -912,6 +912,10 @@ final class AppModel {
             try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
         }
         if selectedServer?.id == profile.id { await chooseAnotherServer() }
+        // The removed profile's unsent canvases and staged attachments live
+        // outside the SwiftData namespace; drop them explicitly.
+        UnsentCanvasManifestStore.removeAllForProfile(profile.id)
+        UploadManager.removeStagingDirectoryForProfile(profileID: profile.id)
         do {
             try await dependencies.cache.remove(profileID: profile.id)
             profiles.removeAll { $0.id == profile.id }
@@ -919,6 +923,14 @@ final class AppModel {
             notice = "The server profile could not be removed completely."
             AppLog.persistence.error("Server profile purge failed.")
         }
+    }
+
+    /// Re-runs selection for the currently selected profile after an
+    /// authenticatedOffline state, so a reconnected network restores the
+    /// full session instead of leaving the app read-only.
+    func retryOfflineSession() async {
+        guard let profile = selectedServer else { return }
+        await select(profile: profile)
     }
 
     func clearCache() async {
@@ -949,14 +961,13 @@ final class AppModel {
             // in-memory state untouched. Account replacement on the same
             // profile does not advance the epoch, hence the explicit check.
             guard selectionEpoch == profileSelectionEpoch,
-                  purgeProfile.accountIdentifier == originatingAccountID,
                   self.selectedServer?.accountIdentifier == originatingAccountID else { return }
+            // The purged namespace's repository must drop its retained
+            // snapshots, cursors, and generation-session state too.
+            await purgeRuntime.repository.resetInMemoryState()
             cacheEpoch = UUID()
             notice = "Saved cache cleared. LibreChat will reload this server's current data."
-            // Recovery belongs to the purged namespace's repository, bound to
-            // its captured profile/account — never to the current selection.
-            purgeRuntime.repository.resetInMemoryState()
-            if !isOffline, repository === purgeRuntime.repository {
+            if !isOffline, let repository = activeRuntime?.repository {
                 startGenerationRecovery(
                     repository: repository,
                     profileID: selectedServer.id,
@@ -1038,6 +1049,12 @@ final class AppModel {
         // not mark the app active or restart work.
         guard generation == nil || generation == lifecycleGeneration else { return }
         isApplicationActive = true
+        // A session restored as authenticatedOffline can reconnect while the
+        // app is closed: revalidate its bearer on the next foreground.
+        if case .authenticatedOffline = authenticationState {
+            Task { await retryOfflineSession() }
+            return
+        }
         // SQLite can recreate -wal/-shm sidecars after the one-shot
         // exclusion; re-apply it on every activation so replacements never
         // stay backup-eligible.
@@ -1046,10 +1063,11 @@ final class AppModel {
               let activatingRuntime = activeRuntime,
               let activatingProfileID = selectedServer?.id,
               let activatingAccountID = selectedServer?.accountIdentifier else { return }
+        let selectionEpoch = profileSelectionEpoch
         await uploadManager?.applicationBecameActive()
         // A profile/account switch across this suspension owns the fresh
         // recovery; the stale activation must not restart work for it.
-        guard activeRuntime === activatingRuntime,
+        guard selectionEpoch == profileSelectionEpoch,
               selectedServer?.id == activatingProfileID,
               selectedServer?.accountIdentifier == activatingAccountID else { return }
         AppLog.generation.info("Application became active; starting generation reconciliation.")

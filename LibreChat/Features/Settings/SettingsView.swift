@@ -269,6 +269,7 @@ struct SettingsView: View {
 /// Two-factor authentication controls, moved behind the settings hub.
 private struct SecuritySettingsPage: View {
     let appModel: AppModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var twoFactorSetup: TwoFactorSetup?
     @State private var verificationCode = ""
     @State private var accountProof = ""
@@ -315,18 +316,21 @@ private struct SecuritySettingsPage: View {
                 }
                 .disabled(verificationCode.isEmpty)
             } else {
-                if appModel.user?.twoFactorEnabled != true {
-                    Button("Set up authenticator") {
-                        perform {
-                            let setup = try await appModel.beginTwoFactorSetup()
-                            twoFactorSetup = setup
-                            backupCodes = setup.backupCodes
-                        }
+                // An absent optional twoFactorEnabled means unknown: only
+                // "Set up authenticator" is offered, never the mutually
+                // contradictory regenerate/disable controls.
+                Button("Set up authenticator") {
+                    perform {
+                        let setup = try await appModel.beginTwoFactorSetup()
+                        twoFactorSetup = setup
+                        backupCodes = setup.backupCodes
                     }
                 }
             }
 
-            if appModel.user?.twoFactorEnabled != false {
+            // Regeneration and disabling are only meaningful when the server
+            // has explicitly confirmed 2FA is enabled.
+            if appModel.user?.twoFactorEnabled == true {
                 Picker("Verification method", selection: $usesBackupCode) {
                     Text("Authenticator").tag(false)
                     Text("Backup code").tag(true)
@@ -353,6 +357,16 @@ private struct SecuritySettingsPage: View {
                     }
                 }
                 .disabled(accountProof.isEmpty || isRegeneratingBackupCodes)
+                .onChange(of: scenePhase) { _, phase in
+                    // The setup key and backup codes are plain-text secrets:
+                    // clear them when the scene backgrounds so the app-switcher
+                    // snapshot and resume never expose them.
+                    if phase != .active {
+                        twoFactorSetup = nil
+                        backupCodes = []
+                        accountProof = ""
+                    }
+                }
                 Button("Disable two-factor authentication", role: .destructive) {
                     perform {
                         try await appModel.disableTwoFactor(proof: selectedProof)

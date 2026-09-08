@@ -516,13 +516,17 @@ public actor AuthSession {
         path: String,
         body: Data? = nil
     ) async throws -> HTTPResponse {
+        // Bind the credential BEFORE the request build: the cookie-jar read
+        // is a suspension across which a same-profile account replacement
+        // could swap sessions, sending A's code/proof under B's bearer.
+        let initiatingValue = try authorizationValue()
         var request = try await transport.request(
             method: method,
             path: path,
             headers: body == nil ? [:] : ["Content-Type": "application/json"],
             body: body
         )
-        request.setValue(try authorizationValue(), forHTTPHeaderField: "Authorization")
+        request.setValue(initiatingValue, forHTTPHeaderField: "Authorization")
         var response = try await transport.execute(request)
         if response.statusCode == 401 {
             _ = try await refresh()
