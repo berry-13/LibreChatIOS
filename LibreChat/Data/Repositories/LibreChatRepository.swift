@@ -4861,12 +4861,14 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
                 guard let answer else {
                     throw LibreChatProtocolError.unsupported("An answer is required to continue this generation.")
                 }
-                let value = question.optionValues[answer] ?? answer
-                guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                      value.utf16.count <= 16_000 else {
+                // The view resolves the selected label to the wire value
+                // exactly once; remapping here could double-convert when one
+                // option's wire value equals another's label.
+                guard !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      answer.utf16.count <= 16_000 else {
                     throw LibreChatProtocolError.unsupported("The answer must be between 1 and 16,000 characters.")
                 }
-                resolvedAnswer = value
+                resolvedAnswer = answer
             } else {
                 guard !question.questionIDs.isEmpty,
                       Set(question.questionIDs).count == question.questionIDs.count else {

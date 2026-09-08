@@ -963,6 +963,14 @@ actor UploadManager: UploadRepository {
         try? FileManager.default.removeItem(at: stagingDirectory(profileID: profileID, accountID: accountID))
     }
 
+    /// Removes every account namespace under this profile.
+    static func removeStagingDirectoryForProfile(profileID: ServerProfileID) {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "Uploads", directoryHint: .isDirectory)
+            .appending(path: safePathComponent(profileID.rawValue), directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: root)
+    }
+
     /// Server-supplied account identifiers are opaque strings, never path
     /// structure: encoding keeps a hostile id like `../..` inside the account
     /// directory namespace instead of escaping it.

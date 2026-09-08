@@ -1083,6 +1083,22 @@ enum UnsentCanvasManifestStore {
         )
     }
 
+    /// Removes every account namespace under this profile.
+    static func removeAllForProfile(_ profileID: ServerProfileID) {
+        let prefix = String(profileID.rawValue.map {
+            $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_"
+        }) + "_"
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "LibreChatUnsentCanvases", directoryHint: .isDirectory)
+        let namespaceDirs = (try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )) ?? []
+        for dirURL in namespaceDirs where dirURL.lastPathComponent.hasPrefix(prefix) {
+            try? FileManager.default.removeItem(at: dirURL)
+        }
+    }
+
     static func restoreAll(profileID: String, accountID: String) -> [LibreChatDomain.Conversation] {
         let directory = directory(profileID: profileID, accountID: accountID)
         let urls = (try? FileManager.default.contentsOfDirectory(

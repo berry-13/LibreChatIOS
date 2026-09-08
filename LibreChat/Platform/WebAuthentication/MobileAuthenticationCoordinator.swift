@@ -382,6 +382,13 @@ private struct OAuthWebView: UIViewRepresentable {
             decisionHandler(.allow)
         }
 
+        static func hostComponent(from origin: String) -> String {
+            origin
+                .replacingOccurrences(of: "https://", with: "")
+                .replacingOccurrences(of: "http://", with: "")
+                .split(separator: ":").first.map(String.init) ?? ""
+        }
+
         static func matchesLandingOrigin(url: URL, origin: String) -> Bool {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             components?.query = nil
@@ -412,7 +419,7 @@ private struct OAuthWebView: UIViewRepresentable {
             let callback = parent.onLanding
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
                 guard let self else { return }
-                let host = self.parent.host.lowercased()
+                let host = Self.hostComponent(from: self.parent.origin)
                 webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                     let harvested = Self.storedCookies(from: cookies, matchingHost: host)
                     Task { @MainActor in
