@@ -478,8 +478,10 @@ final class AppModel {
             return
         } catch let error as LibreChatProtocolError {
             guard selectionEpoch == profileSelectionEpoch else { return }
+            // Server-controlled payloads ride inside protocol errors; only a
+            // finite category reaches the persistent OS log.
             AppLog.authentication.error(
-                "Session restore failed: \(String(describing: error), privacy: .public)"
+                "Session restore failed: \(Self.sessionRestoreFailureLabel(error))"
             )
             switch error {
             case .transport:
@@ -1626,6 +1628,25 @@ final class AppModel {
         guard generationRecoveryTaskID == taskID else { return }
         generationRecoveryTask = nil
         generationRecoveryTaskID = nil
+    }
+
+    /// Finite, redacted label for restore-failure logging: the full protocol
+    /// error can embed server-supplied strings that must not reach the
+    /// persistent OS log verbatim.
+    private static func sessionRestoreFailureLabel(_ error: LibreChatProtocolError) -> String {
+        switch error {
+        case .invalidResponse: "invalidResponse"
+        case .unauthorized: "unauthorized"
+        case let .httpStatus(status, _, _): "httpStatus(\(status))"
+        case .serverNotReady: "serverNotReady"
+        case .generationConflict: "generationConflict"
+        case .decoding: "decoding"
+        case .encoding: "encoding"
+        case .transport: "transport"
+        case .unsupported: "unsupported"
+        case .keychain: "keychain"
+        case .responseTooLarge: "responseTooLarge"
+        }
     }
 
     private func receiveConnectivityPath(reachable: Bool) {

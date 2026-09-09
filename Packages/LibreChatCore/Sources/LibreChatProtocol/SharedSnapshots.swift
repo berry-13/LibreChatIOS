@@ -80,7 +80,9 @@ public struct SharedSnapshotMessageDTO: Decodable, Equatable, Sendable {
         var mappedContent = LibreChatMessageDTO.domainContent(from: content ?? []).map {
             Self.sanitizedSharedContent($0, shareID: shareID)
         }
-        mappedContent.append(contentsOf: sharedFiles.map { .file($0.uploadedFile) })
+        // Top-level files stay ONLY in `files`: the snapshot row renders that
+        // collection as its own links, so projecting them into content too
+        // would render every attachment twice.
         mappedContent.append(contentsOf: try (attachments ?? []).compactMap {
             try Self.domainAttachment($0, shareID: shareID)
         })

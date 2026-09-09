@@ -33,6 +33,44 @@ private struct SkillPickerPresentation: Identifiable {
     let id = UUID()
 }
 
+private struct PhotoImportTooLarge: LocalizedError {
+    let limit: Int
+    var errorDescription: String? {
+        "That photo is too large to attach (over \(limit / 1_048_576) MB)."
+    }
+}
+
+/// Hard ceiling for whole-file imports: server limits produce their own
+/// precise rejections, but nothing may materialize an unbounded file.
+/// File-scope (not MainActor-isolated) so the Transferable import closure
+/// can enforce it from any executor.
+private let maximumPhotoImportBytes = 200 * 1_048_576
+
+/// Copies a provider photo in bounded chunks so a panorama, RAW, or hostile
+/// provider can never materialize unbounded temporary storage: the copy aborts
+/// (and cleans up) the moment the import ceiling is crossed.
+private func boundedPhotoCopy(from source: URL, to destination: URL, limit: Int) throws {
+    guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    let input = try FileHandle(forReadingFrom: source)
+    defer { try? input.close() }
+    let output = try FileHandle(forWritingTo: destination)
+    var written = 0
+    do {
+        while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+            try output.write(contentsOf: chunk)
+            written += chunk.count
+            if written > limit { throw PhotoImportTooLarge(limit: limit) }
+        }
+        try output.close()
+    } catch {
+        try? output.close()
+        try? FileManager.default.removeItem(at: destination)
+        throw error
+    }
+}
+
 /// Photos-library providers advertise image content, not raw URL
 /// transferables, so the picker loads through an image FileRepresentation
 /// that hands back a bounded, deletable file copy.
@@ -47,7 +85,11 @@ struct PhotoAssetFile: Transferable {
                 ? "img" : received.file.pathExtension
             let copy = FileManager.default.temporaryDirectory
                 .appending(path: "photo-import-\(UUID().uuidString).\(extensionSuffix)")
-            try FileManager.default.copyItem(at: received.file, to: copy)
+            try boundedPhotoCopy(
+                from: received.file,
+                to: copy,
+                limit: maximumPhotoImportBytes
+            )
             return Self(url: copy)
         }
     }
@@ -56,7 +98,7 @@ struct PhotoAssetFile: Transferable {
 struct ChatView: View {
     /// Hard ceiling for whole-file imports: server limits produce their own
     /// precise rejections, but nothing may materialize an unbounded file.
-    static let maximumImportedFileBytes = 200 * 1_048_576
+    static let maximumImportedFileBytes = maximumPhotoImportBytes
 
     /// Decodes a photo asset through a pixel-limited CGImageSource so huge
     /// ProRAW/panorama sources never allocate their full decompressed size.

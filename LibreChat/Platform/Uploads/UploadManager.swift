@@ -405,6 +405,11 @@ actor UploadManager: UploadRepository {
                 Task { await self?.reportProgress(id: id, fraction: fraction) }
             }
             try? FileManager.default.removeItem(at: bodyFileURL)
+            // A cancel that raced the completed response must win: cancel(id:)
+            // cancels this task before flipping the record, so checking
+            // cancellation here keeps a late acknowledgement from
+            // resurrecting the removed attachment as .completed.
+            try Task.checkCancellation()
             let remoteFile = try response.domainModel(fallbackFilename: upload.filename)
             upload = try Self.completedUpload(upload, acknowledging: remoteFile)
             try await update(upload)

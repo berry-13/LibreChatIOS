@@ -691,7 +691,14 @@ private struct AccountProfileView: View {
             if data != nil, Self.avatarMIMEType(data!) == nil {
                 data = try Self.jpegTranscoded(data!)
             }
-            guard let data, let mimeType = Self.avatarMIMEType(data) else {
+            guard var data else { throw AccountProfileError.unsupportedAvatarFormat }
+            // A valid image can still exceed the server's byte limit
+            // (full-resolution library photos routinely do): downscale and
+            // re-encode until it fits instead of failing the upload.
+            if data.count > LibreChatAccountProfileAPI.maximumAvatarBytes {
+                data = try Self.avatarFittedToByteLimit(data)
+            }
+            guard let mimeType = Self.avatarMIMEType(data) else {
                 throw AccountProfileError.unsupportedAvatarFormat
             }
             _ = try await appModel.uploadAccountAvatar(
@@ -708,7 +715,11 @@ private struct AccountProfileView: View {
 
     /// Re-encodes unsupported source formats (HEIC/HEIF) as JPEG through a
     /// pixel-limited ImageIO decode.
-    private static func jpegTranscoded(_ data: Data, maxPixel: Int = 4_096) throws -> Data {
+    private static func jpegTranscoded(
+        _ data: Data,
+        maxPixel: Int = 4_096,
+        quality: CGFloat = 0.9
+    ) throws -> Data {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(
                   source,
@@ -721,11 +732,28 @@ private struct AccountProfileView: View {
               ) else {
             throw AccountProfileError.unsupportedAvatarFormat
         }
-        let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.9)
+        let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: quality)
         guard let jpeg, !jpeg.isEmpty else {
             throw AccountProfileError.unsupportedAvatarFormat
         }
         return jpeg
+    }
+
+    /// Progressively smaller re-encodes for valid-but-oversized avatars; the
+    /// final rung (512px) sits far below the byte limit for any photographic
+    /// content, so exhaustion means the source is unusable.
+    private static func avatarFittedToByteLimit(_ data: Data) throws -> Data {
+        let limit = LibreChatAccountProfileAPI.maximumAvatarBytes
+        let ladder: [(pixel: Int, quality: CGFloat)] = [
+            (2_048, 0.85), (1_536, 0.8), (1_024, 0.75), (768, 0.65), (512, 0.55)
+        ]
+        for step in ladder {
+            if let fitted = try? Self.jpegTranscoded(data, maxPixel: step.pixel, quality: step.quality),
+               fitted.count <= limit {
+                return fitted
+            }
+        }
+        throw AccountProfileError.avatarTooLarge(maximumBytes: limit)
     }
 
     private static func avatarMIMEType(_ data: Data) -> String? {
