@@ -142,6 +142,7 @@ public actor MirroredSecretStore: SecretStore {
         do {
             primaryData = try await primary.data(for: key)
         } catch {
+            #if DEBUG
             // A throwing primary (missing entitlement, revoked access) must
             // not hide the mirror — the mirror may be the only copy that
             // exists in exactly those environments.
@@ -149,6 +150,13 @@ public actor MirroredSecretStore: SecretStore {
                 "Session keychain read failed; falling back to file mirror: \(String(describing: error), privacy: .public)"
             )
             primaryData = nil
+            #else
+            // Production has no mirror: a Keychain read failure must surface
+            // instead of masquerading as a missing credential, which callers
+            // would treat as definitive absence — refreshing without the
+            // cookie and ultimately clearing a still-valid saved session.
+            throw error
+            #endif
         }
         if let primaryData {
             return primaryData

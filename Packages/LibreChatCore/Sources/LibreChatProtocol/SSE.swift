@@ -150,9 +150,23 @@ public actor URLSessionEventStreamTransport: EventStreamTransport {
                         status: response.statusCode
                     ))
                     var decoder = SSEDecoder()
+                    // Feed the decoder line-sized chunks instead of single
+                    // bytes: an SSE event only completes at its terminating
+                    // newline, so flushing on newlines preserves event timing
+                    // while avoiding a decoder call per streamed byte.
+                    var lineBuffer = Data()
                     for try await byte in bytes {
                         try Task.checkCancellation()
-                        for event in try decoder.append(Data([byte])) {
+                        lineBuffer.append(byte)
+                        if byte == UInt8(ascii: "\n") || byte == UInt8(ascii: "\r") {
+                            for event in try decoder.append(lineBuffer) {
+                                continuation.yield(event)
+                            }
+                            lineBuffer.removeAll(keepingCapacity: true)
+                        }
+                    }
+                    if !lineBuffer.isEmpty {
+                        for event in try decoder.append(lineBuffer) {
                             continuation.yield(event)
                         }
                     }
