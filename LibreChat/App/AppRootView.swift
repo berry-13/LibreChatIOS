@@ -23,6 +23,7 @@ struct AppRootView: View {
     let model: AppModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     /// The degraded-storage notice is informational; once read, it stays out
     /// of the way for the rest of the session instead of occupying the top
     /// inset permanently.
@@ -40,7 +41,11 @@ struct AppRootView: View {
             case .signedOut:
                 LoginView(model: model)
             case .signedIn:
-                if model.isAppLocked {
+                // The lock screen is presented when the app-level lock has
+                // engaged, or — with the lock enabled — whenever THIS scene
+                // is not active: iOS snapshots a scene as soon as it resigns,
+                // even while a sibling window stays active and unlocked.
+                if model.isAppLocked || (model.isAppLockEnabled && scenePhase != .active) {
                     AppLockView(appModel: model)
                 } else {
                     SignedInRootView(appModel: model)

@@ -383,10 +383,10 @@ private struct OAuthWebView: UIViewRepresentable {
         }
 
         static func hostComponent(from origin: String) -> String {
-            origin
-                .replacingOccurrences(of: "https://", with: "")
-                .replacingOccurrences(of: "http://", with: "")
-                .split(separator: ":").first.map(String.init) ?? ""
+            // `originString` keeps the normalized "/" path, so string surgery
+            // would retain the trailing slash and reject every cookie domain.
+            // URLComponents parses the host exactly, IPv6 brackets included.
+            URLComponents(string: origin)?.host?.lowercased() ?? ""
         }
 
         static func matchesLandingOrigin(url: URL, origin: String) -> Bool {

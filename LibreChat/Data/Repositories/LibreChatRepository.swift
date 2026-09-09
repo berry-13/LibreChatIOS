@@ -5952,7 +5952,7 @@ actor LibreChatRepository: AccountAccessRepository, AccountProfileRepository, Co
     private static func isFatalStreamError(_ error: LibreChatProtocolError) -> Bool {
         switch error {
         case .invalidResponse, .unauthorized, .generationConflict, .decoding,
-             .encoding, .unsupported, .keychain:
+             .encoding, .unsupported, .keychain, .responseTooLarge:
             true
         case let .httpStatus(status, _, _):
             (400..<500).contains(status) && status != 429

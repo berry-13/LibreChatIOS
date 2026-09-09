@@ -64,8 +64,9 @@ final class SharedSnapshotModel {
             // The snapshot endpoint is anonymous (.none authorization): a
             // 401 says the share is unavailable or restricted, NOT that the
             // signed-in viewer's session expired — never clear the session.
-            if let protocolError = error as? LibreChatProtocolError,
-               case .httpStatus(401, _, _) = protocolError {
+            // RESTClient.validate folds every 401 into `.unauthorized`, even
+            // for anonymous requests, so both spellings map here.
+            if Self.isShareAccessRejection(error) {
                 snapshot = nil
                 state = .failed("This shared snapshot is unavailable or requires authentication on the web.")
                 return
@@ -175,6 +176,19 @@ final class SharedSnapshotModel {
         }
     }
 
+    /// The share endpoint makes no authenticated request of its own, so both
+    /// the raw 401 status and validate's folded `.unauthorized` mean the
+    /// share itself rejected the anonymous read.
+    private static func isShareAccessRejection(_ error: Error) -> Bool {
+        guard let protocolError = error as? LibreChatProtocolError else { return false }
+        switch protocolError {
+        case .httpStatus(401, _, _), .unauthorized:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func handleForkRefreshFailure(
         _ error: LibreChatProtocolError,
         prefix: String
@@ -188,6 +202,14 @@ final class SharedSnapshotModel {
             forkUnavailableReason = "Your account is no longer allowed to access this shared snapshot."
             operationError = prefix
         default:
+            // The refreshed load is anonymous too: its 401s are share-access
+            // failures and must never clear the signed-in viewer's session.
+            if Self.isShareAccessRejection(error) {
+                snapshot = nil
+                forkUnavailableReason = nil
+                state = .failed("This shared snapshot is unavailable or requires authentication on the web.")
+                return
+            }
             if error.isUnauthorized { await onUnauthorized() }
             operationError = "\(prefix) The refreshed snapshot could not be loaded."
         }

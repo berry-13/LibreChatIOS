@@ -51,7 +51,7 @@ extension Error {
         case let .httpStatus(status, _, _):
             return (400...499).contains(status) && status != 409
         case .unauthorized, .transport, .serverNotReady, .generationConflict,
-             .decoding, .invalidResponse, .keychain:
+             .decoding, .invalidResponse, .keychain, .responseTooLarge:
             return false
         }
     }

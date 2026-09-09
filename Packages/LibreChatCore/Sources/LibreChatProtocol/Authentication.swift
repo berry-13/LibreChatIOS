@@ -388,7 +388,21 @@ public actor AuthSession {
             revision: credentialRevision
         ))
         refreshTask = nil
-        if clearCookies { try await transport.clearCookies() }
+        if clearCookies {
+            do {
+                try await transport.clearCookies()
+            } catch {
+                // The persisted token is gone, but a surviving refresh cookie
+                // could still mint a fresh session on the next launch: the
+                // tombstone keeps restore from resurrecting the signed-out
+                // account until a deliberate sign-in clears it.
+                Self.writeSignedOutTombstone(for: sessionStorageKey)
+                authLog.error(
+                    "Cookie clearing failed; tombstoning the session: \(String(describing: error), privacy: .public)"
+                )
+                throw error
+            }
+        }
     }
 
     // MARK: - Signed-out tombstone
