@@ -780,10 +780,15 @@ final class ConversationListModel {
             // Post-dispatch failure is ambiguous: the write may have
             // committed. Reconcile server truth instead of rolling back.
             if let authoritative = try? await repository.chatFavorites() {
+                // Only the newest mutation sequence may install
+                // reconciliation results: an older delayed GET must not
+                // overwrite a newer toggle's confirmed response or corrupt
+                // the rollback baseline.
+                guard sequence == favoritesMutationSequence else { return }
                 confirmedFavorites = authoritative
                 favorites = authoritative
                 reportOperationError("Pinned model state was re-checked against LibreChat after a save failure.")
-            } else {
+            } else if sequence == favoritesMutationSequence {
                 favorites = confirmedFavorites
                 reportOperationError(error.userFacingMessage)
             }

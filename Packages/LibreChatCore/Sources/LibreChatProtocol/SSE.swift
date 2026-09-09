@@ -158,6 +158,14 @@ public actor URLSessionEventStreamTransport: EventStreamTransport {
                     for try await byte in bytes {
                         try Task.checkCancellation()
                         lineBuffer.append(byte)
+                        // An unterminated line must not accumulate unboundedly
+                        // while waiting for its newline: the decoder's frame
+                        // cap is enforced here, where the buffer grows.
+                        if lineBuffer.count > SSEDecoder.maximumFrameBytes {
+                            throw LibreChatProtocolError.unsupported(
+                                "The server sent an event frame larger than \(SSEDecoder.maximumFrameBytes) bytes."
+                            )
+                        }
                         if byte == UInt8(ascii: "\n") || byte == UInt8(ascii: "\r") {
                             for event in try decoder.append(lineBuffer) {
                                 continuation.yield(event)

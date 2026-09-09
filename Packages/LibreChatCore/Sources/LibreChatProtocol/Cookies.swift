@@ -282,8 +282,11 @@ public actor ProfileCookieJar {
         restored = true
     }
 
-    public func cookieHeader(for url: URL) async -> String? {
-        try? await restore()
+    public func cookieHeader(for url: URL) async throws -> String? {
+        // A transient secret-store failure propagates instead of degrading to
+        // a cookie-less request: dispatching /api/auth/refresh without the
+        // persisted refresh cookie would invalidate a recoverable session.
+        try await restore()
         removeExpired()
         let eligible = cookies
             .filter { matches($0, url: url) }

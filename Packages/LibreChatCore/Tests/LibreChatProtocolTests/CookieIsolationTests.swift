@@ -26,8 +26,8 @@ struct CookieIsolationTests {
             responseHeaders: ["Set-Cookie": "refreshToken=second; Path=/; Secure; HttpOnly"],
             for: url
         )
-        #expect(await first.cookieHeader(for: url) == "refreshToken=first")
-        #expect(await second.cookieHeader(for: url) == "refreshToken=second")
+        #expect(try await first.cookieHeader(for: url) == "refreshToken=first")
+        #expect(try await second.cookieHeader(for: url) == "refreshToken=second")
 
         let restoredFirst = ProfileCookieJar(
             profileID: ServerProfileID(rawValue: "one"),
@@ -39,7 +39,7 @@ struct CookieIsolationTests {
             baseURL: url,
             secretStore: secrets
         )
-        #expect(await restoredFirst.cookieHeader(for: url) == "refreshToken=first")
-        #expect(await restoredSecond.cookieHeader(for: url) == "refreshToken=second")
+        #expect(try await restoredFirst.cookieHeader(for: url) == "refreshToken=first")
+        #expect(try await restoredSecond.cookieHeader(for: url) == "refreshToken=second")
     }
 }

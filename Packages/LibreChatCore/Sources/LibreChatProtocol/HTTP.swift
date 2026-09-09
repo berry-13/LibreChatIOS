@@ -312,7 +312,7 @@ public actor HTTPTransport {
         for (name, value) in headers {
             request.setValue(value, forHTTPHeaderField: name)
         }
-        if let cookie = await cookieJar.cookieHeader(for: url) {
+        if let cookie = try await cookieJar.cookieHeader(for: url) {
             request.setValue(cookie, forHTTPHeaderField: "Cookie")
         }
         return request
@@ -907,6 +907,13 @@ public actor RESTClient {
             )
             if let credential {
                 urlRequest.setValue(credential.headerValue, forHTTPHeaderField: "Authorization")
+                // Refuse dispatch when the account changed across the
+                // request-build suspension: an attachment must never upload
+                // under a stale session after ownership has changed.
+                let dispatched = try? await authSession.authorizationCredential()
+                guard let dispatched, dispatched.headerValue == credential.headerValue else {
+                    throw LibreChatProtocolError.unauthorized
+                }
             }
             let response = try await transport.executeUpload(
                 urlRequest,
@@ -961,6 +968,13 @@ public actor RESTClient {
             )
             if let credential {
                 urlRequest.setValue(credential.headerValue, forHTTPHeaderField: "Authorization")
+                // Refuse dispatch when the account changed across the
+                // request-build suspension: an attachment must never upload
+                // under a stale session after ownership has changed.
+                let dispatched = try? await authSession.authorizationCredential()
+                guard let dispatched, dispatched.headerValue == credential.headerValue else {
+                    throw LibreChatProtocolError.unauthorized
+                }
             }
             let response = try await transport.executeUpload(
                 urlRequest,
