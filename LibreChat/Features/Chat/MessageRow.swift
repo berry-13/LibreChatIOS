@@ -465,18 +465,34 @@ struct MessageContentView: View {
         case let .image(url, alternativeText):
             BoundedMessageImage(url: url, alternativeText: alternativeText)
         case let .video(url, alternativeText):
-            Link(destination: url) {
-                Label(alternativeText ?? "Open video", systemImage: "play.rectangle.fill")
-            }
-            .accessibilityLabel(alternativeText ?? "Open attached video")
-        case let .audio(url, transcript):
-            VStack(alignment: .leading, spacing: 4) {
+            // Model-controlled destinations must be web links: custom
+            // schemes (tel:, facetime:, installed-app handlers) never fire.
+            if isWebURL(url) {
                 Link(destination: url) {
-                    Label("Open audio", systemImage: "waveform")
+                    Label(alternativeText ?? "Open video", systemImage: "play.rectangle.fill")
                 }
-                if let transcript, !transcript.isEmpty {
-                    Text(transcript).font(.caption).foregroundStyle(.secondary)
+                .accessibilityLabel(alternativeText ?? "Open attached video")
+            } else {
+                Label("Unsupported video link", systemImage: "link.badge.plus")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case let .audio(url, transcript):
+            // Model-controlled destinations must be web links: custom
+            // schemes (tel:, facetime:, installed-app handlers) never fire.
+            if isWebURL(url) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Link(destination: url) {
+                        Label("Open audio", systemImage: "waveform")
+                    }
+                    if let transcript, !transcript.isEmpty {
+                        Text(transcript).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
+            } else {
+                Label("Unsupported audio link", systemImage: "link.badge.plus")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         case let .file(file):
             Label {
@@ -600,6 +616,13 @@ private final class CachedMarkdown {
 /// length and streaming byte caps, then a pixel-limited decode — an
 /// unbounded `AsyncImage` could exhaust bandwidth or memory on a hostile
 /// or oversized source.
+/// Model-controlled media destinations must be ordinary web links:
+/// custom schemes (tel:, facetime:, installed-app handlers) never fire.
+private func isWebURL(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased() else { return false }
+    return scheme == "https" || scheme == "http"
+}
+
 private struct BoundedMessageImage: View {
     let url: URL
     let alternativeText: String?

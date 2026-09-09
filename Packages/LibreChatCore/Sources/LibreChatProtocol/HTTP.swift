@@ -82,11 +82,16 @@ public enum LibreChatProtocolError: LocalizedError, Equatable, Sendable {
     case transport(String)
     case unsupported(String)
     case keychain(Int32)
+    /// The request was delivered, but its response exceeded the transport's
+    /// size cap: delivery is uncertain, never user-cancelled.
+    case responseTooLarge
 
     public var errorDescription: String? {
         switch self {
         case .invalidResponse:
             "LibreChat returned an invalid response."
+        case .responseTooLarge:
+            "LibreChat returned an oversized response."
         case .unauthorized:
             "Your LibreChat session is no longer valid."
         case let .httpStatus(status, message, _):
@@ -726,6 +731,9 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
     private var continuation: CheckedContinuation<Data, Error>?
     private var buffer = Data()
     private(set) var response: URLResponse?
+    /// Set the moment the response size cap cancels the task, so completion
+    /// can distinguish the cap from a user cancellation.
+    private var responseSizeCapEngaged = false
     /// URLSession deliver responses/cookies on its queue; serializing every
     /// access through one queue keeps the buffer and continuation safe without
     /// locking.
@@ -786,6 +794,7 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
         let oversized = response.expectedContentLength > Self.maximumResponseBytes
         queue.async {
             self.response = response
+            if oversized { self.responseSizeCapEngaged = true }
         }
         completionHandler(oversized ? .cancel : .allow)
     }
@@ -799,6 +808,7 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
             self.buffer.append(data)
             guard self.buffer.count <= Self.maximumResponseBytes else {
                 self.buffer.removeAll()
+                self.responseSizeCapEngaged = true
                 dataTask.cancel()
                 return
             }
@@ -821,11 +831,20 @@ private final class UploadTaskDelegate: NSObject, URLSessionDataDelegate, @unche
             guard let continuation = self.continuation else { return }
             self.continuation = nil
             if let error {
-                continuation.resume(throwing: error)
+                // The size cap cancels the task AFTER the body was delivered:
+                // surfacing it as a cancellation would let callers discard
+                // recoverable staged state for a request the server may have
+                // already committed.
+                if self.responseSizeCapEngaged, (error as? URLError)?.code == .cancelled {
+                    continuation.resume(throwing: LibreChatProtocolError.responseTooLarge)
+                } else {
+                    continuation.resume(throwing: error)
+                }
             } else {
                 continuation.resume(returning: self.buffer)
             }
             self.buffer.removeAll()
+            self.responseSizeCapEngaged = false
         }
     }
 }
@@ -1117,6 +1136,14 @@ public actor RESTClient {
                         refreshed = true
                         continue
                     }
+                    // Refuse dispatch when the account changed during the
+                    // credential suspension: raw requests (avatar uploads,
+                    // steering mutations) must never carry a signed-out or
+                    // replaced account's bearer to the server.
+                    let dispatched = try? await authSession.authorizationCredential()
+                    guard let dispatched, dispatched.headerValue == credential?.headerValue else {
+                        throw LibreChatProtocolError.unauthorized
+                    }
                 }
 
                 let response = try await transport.execute(request, attempt: attempt)
@@ -1239,6 +1266,13 @@ public actor RESTClient {
                         _ = try await authSession.refresh(ifRejected: nil)
                         refreshed = true
                         continue
+                    }
+                    // Refuse dispatch when the account changed during the
+                    // credential suspension, mirroring `send`'s pre-dispatch
+                    // check.
+                    let dispatched = try? await authSession.authorizationCredential()
+                    guard let dispatched, dispatched.headerValue == credential?.headerValue else {
+                        throw LibreChatProtocolError.unauthorized
                     }
                 }
 

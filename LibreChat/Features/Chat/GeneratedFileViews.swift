@@ -17,7 +17,7 @@ enum GeneratedFilePreviewPollingFailureDisposition: Equatable, Sendable {
         case let .httpStatus(status, _, _) where (500..<600).contains(status):
             return .retry
         case .invalidResponse, .decoding, .encoding, .generationConflict,
-             .unsupported, .keychain, .httpStatus:
+             .unsupported, .keychain, .responseTooLarge, .httpStatus:
             return .stop
         }
     }

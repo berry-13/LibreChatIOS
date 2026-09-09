@@ -644,7 +644,7 @@ actor FollowUpQueueDrainCoordinator {
                 attemptID: attemptID,
                 reason: .requiresUserReview
             )
-        case .invalidResponse, .decoding:
+        case .invalidResponse, .decoding, .responseTooLarge:
             return try await uncertain(itemID: itemID, attemptID: attemptID, reason: .invalidAcknowledgement)
         case .transport, .encoding, .unsupported, .keychain:
             return try await uncertain(itemID: itemID, attemptID: attemptID, reason: .transport)

@@ -193,6 +193,11 @@ actor UploadManager: UploadRepository {
         let id = UUID()
         let localURL = directory.appending(path: "\(id.uuidString)-\(sanitized)")
         try prepared.data.write(to: localURL, options: .atomic)
+        // Staged attachments are transient user-selected file contents: like
+        // the cache store and unsent-canvas manifests, they must never be
+        // copied into iCloud or device backups while they await delivery.
+        Self.excludeFromBackups(directory)
+        Self.excludeFromBackups(localURL)
         let upload = PendingUpload(
             id: id,
             profileID: profileID,
@@ -493,7 +498,7 @@ actor UploadManager: UploadRepository {
             return !(error is CancellationError)
         }
         switch protocolError {
-        case .transport, .decoding, .invalidResponse, .serverNotReady:
+        case .transport, .decoding, .invalidResponse, .serverNotReady, .responseTooLarge:
             return true
         case let .httpStatus(status, _, _):
             return status >= 500
@@ -969,6 +974,16 @@ actor UploadManager: UploadRepository {
             .appending(path: "Uploads", directoryHint: .isDirectory)
             .appending(path: safePathComponent(profileID.rawValue), directoryHint: .isDirectory)
         try? FileManager.default.removeItem(at: root)
+    }
+
+    /// Marks a staged-attachment path as excluded from device backups,
+    /// mirroring the policy applied to the cache store and unsent-canvas
+    /// manifests.
+    static func excludeFromBackups(_ url: URL) {
+        var mutableURL = url
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? mutableURL.setResourceValues(resourceValues)
     }
 
     /// Server-supplied account identifiers are opaque strings, never path

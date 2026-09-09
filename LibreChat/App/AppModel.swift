@@ -520,12 +520,21 @@ final class AppModel {
         }
     }
 
+    private var isSigningIn = false
+
     func signIn(email: String, password: String) async throws {
         guard let activeRuntime else { throw LibreChatProtocolError.unsupported("Choose a server first.") }
         let selectionEpoch = profileSelectionEpoch
         isWorking = true
         notice = nil
         defer { isWorking = false }
+
+        // Rapid taps or simultaneous windows can queue multiple sign-ins;
+        // each login immediately installs its bearer, so only the first may
+        // proceed.
+        guard !isSigningIn else { return }
+        isSigningIn = true
+        defer { isSigningIn = false }
 
         switch try await activeRuntime.protocolRuntime.authSession.login(email: email, password: password) {
         case let .authenticated(session):
@@ -912,13 +921,15 @@ final class AppModel {
             try? await runtime.protocolRuntime.authSession.clearAuthentication(clearCookies: true)
         }
         if selectedServer?.id == profile.id { await chooseAnotherServer() }
-        // The removed profile's unsent canvases and staged attachments live
-        // outside the SwiftData namespace; drop them explicitly.
-        UnsentCanvasManifestStore.removeAllForProfile(profile.id)
-        UploadManager.removeStagingDirectoryForProfile(profileID: profile.id)
         do {
             try await dependencies.cache.remove(profileID: profile.id)
             profiles.removeAll { $0.id == profile.id }
+            // The removed profile's unsent canvases and staged attachments
+            // live outside the SwiftData namespace — but they may only be
+            // deleted once the authoritative cache removal succeeded: on
+            // failure the retained profile must keep its unsent user work.
+            UnsentCanvasManifestStore.removeAllForProfile(profile.id)
+            UploadManager.removeStagingDirectoryForProfile(profileID: profile.id)
         } catch {
             notice = "The server profile could not be removed completely."
             AppLog.persistence.error("Server profile purge failed.")
@@ -986,10 +997,6 @@ final class AppModel {
         await uploadManager?.discardUploads(for: conversationID)
     }
 
-    func engageAppLockForInactiveScene() {
-        if appLock.isEnabled, phase == .signedIn { isAppLocked = true }
-    }
-
     /// The app enables multiple scenes: generation streams and the lock are
     /// global, so teardown engages only when the LAST active scene resigns.
     private var activeSceneCount = 0
@@ -1007,9 +1014,10 @@ final class AppModel {
 
     func sceneResignedActive() {
         activeSceneCount = max(0, activeSceneCount - 1)
-        // Privacy masking engages for EVERY resigning scene: iOS captures
-        // that scene's snapshot even while another window stays active.
-        engageAppLockForInactiveScene()
+        // Snapshot masking for a resigning scene is scene-local (driven by
+        // that scene's own scenePhase in AppRootView), so a still-active
+        // sibling window keeps working; the global lock below engages only
+        // when the LAST active scene resigns.
         guard activeSceneCount == 0 else { return }
         lifecycleGeneration &+= 1
         let generation = lifecycleGeneration
@@ -1623,8 +1631,19 @@ final class AppModel {
     private func receiveConnectivityPath(reachable: Bool) {
         guard connectivityRecoveryGate.receivesPath(reachable: reachable),
               isApplicationActive,
-              phase == .signedIn,
-              !isOffline,
+              phase == .signedIn else { return }
+
+        // A session restored as authenticatedOffline must revalidate on the
+        // connectivity edge itself: the network can return while the app stays
+        // foregrounded, and without this the session remains read-only until
+        // the next background/foreground cycle.
+        if case .authenticatedOffline = authenticationState {
+            AppLog.generation.info("Network connectivity returned; revalidating the offline session.")
+            Task { await retryOfflineSession() }
+            return
+        }
+
+        guard !isOffline,
               let repository = activeRuntime?.repository,
               let profileID = selectedServer?.id,
               let accountID = selectedServer?.accountIdentifier else { return }
