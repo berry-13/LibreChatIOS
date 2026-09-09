@@ -146,6 +146,18 @@ protocol VoiceCaptureServicing: Sendable {
 
 actor VoiceCaptureSession: VoiceCaptureServicing {
     static let maximumDuration: TimeInterval = 300
+
+    /// Deletes every file left in the voice directory: at capture start none
+    /// can belong to a live recording, so anything present is crash debris.
+    private static func removeOrphanedRecordings(in directory: URL) {
+        let stale = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for url in stale {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
     static let minimumDuration: TimeInterval = 0.35
     static let maximumBytes = 25 * 1_024 * 1_024
 
@@ -191,6 +203,11 @@ actor VoiceCaptureSession: VoiceCaptureServicing {
             .appending(path: "LibreChatVoice", directoryHint: .isDirectory)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            // A crash or force-quit mid-recording leaves orphaned microphone
+            // audio behind (neither finish nor cancel ran). A fresh capture is
+            // the one moment no recording can legitimately be alive — the
+            // active one was just cancelled — so purge whatever remained.
+            Self.removeOrphanedRecordings(in: directory)
             let url = directory.appending(path: "voice-\(id.rawValue.uuidString).m4a")
             let recorder = try AVAudioRecorder(
                 url: url,

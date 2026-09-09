@@ -779,8 +779,11 @@ enum FileImagePreviewStore {
         let thumbKey = "thumb:\(item.id)" as NSString
         if let cached = cache.object(forKey: thumbKey) { return cached }
         // Metadata-based guard: a large declared size skips the automatic
-        // download entirely instead of transferring the original.
-        if let declared = item.file.bytes, declared > maximumAutomaticThumbnailBytes {
+        // download entirely instead of transferring the original. A missing
+        // or negative size is unknown-and-possibly-large — only a known,
+        // nonnegative size within the limit may auto-download.
+        guard let declared = item.file.bytes, declared >= 0,
+              declared <= Self.maximumAutomaticThumbnailBytes else {
             return nil
         }
         let fetchGeneration = generation

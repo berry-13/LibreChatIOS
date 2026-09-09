@@ -130,7 +130,7 @@ struct MirroredSecretStoreTests {
         let stored = await jar.snapshot()
         #expect(stored.map(\.name).sorted() == ["refreshToken", "token_provider"])
 
-        let header = await jar.cookieHeader(for: try #require(URL(string: "http://localhost:3080/api/auth/refresh")))
+        let header = try await jar.cookieHeader(for: try #require(URL(string: "http://localhost:3080/api/auth/refresh")))
         #expect(header?.contains("refreshToken=loopback-refresh") == true)
     }
 
