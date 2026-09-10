@@ -1,0 +1,83 @@
+name: iOS Tests
+
+on:
+  push:
+    branches: [main, initial-codebase]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run-ui-tests:
+        description: "Also run UI tests (known flaky)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ios-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DESTINATION: 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5'
+
+jobs:
+  tests:
+    name: Unit tests (iPhone 17 Pro, iOS 26.5)
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Pinned to match local development (Xcode 26.6, build 17F113). The
+      # iOS 26.5 simulator runtime with iPhone 17 Pro is preinstalled on the
+      # macos-26 image.
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Print Xcode & destination info
+        run: |
+          xcodebuild -version
+          xcodebuild -showdestinations \
+            -project LibreChatIOS.xcodeproj \
+            -scheme LibreChat \
+            | grep -A20 'Available destinations'
+
+      # Unit tests only by default; LibreChatUITests is excluded from the
+      # scheme's test action because it is flaky in CI-like environments
+      # (E2E tests additionally require the local backend's E2E_* env).
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project LibreChatIOS.xcodeproj \
+            -scheme LibreChat \
+            -destination "$DESTINATION" \
+            -only-testing:LibreChatTests \
+            -resultBundlePath UnitTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github
+
+      - name: Run UI tests (manual runs only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run-ui-tests }}
+        run: |
+          set -o pipefail
+          rm -rf UnitTests.xcresult
+          xcodebuild test \
+            -project LibreChatIOS.xcodeproj \
+            -scheme LibreChat \
+            -destination "$DESTINATION" \
+            -only-testing:LibreChatUITests \
+            -resultBundlePath UnitTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-test-results
+          path: UnitTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

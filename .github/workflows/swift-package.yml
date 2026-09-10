@@ -1,0 +1,44 @@
+name: Swift Package
+
+on:
+  push:
+    branches: [main, initial-codebase]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: swift-package-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: LibreChatCore build & test (macOS)
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Packages/LibreChatCore
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Pinned to match the Xcode used for local development and the iOS CI jobs.
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Print toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build (Debug)
+        run: swift build
+
+      - name: Build (Release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test
