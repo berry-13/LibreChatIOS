@@ -42,7 +42,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -resultBundlePath Analyze.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            | xcbeautify --renderer github
+            | xcbeautify --renderer github-actions
 
       - name: Build (Release)
         run: |
@@ -54,7 +54,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -resultBundlePath ReleaseBuild.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            | xcbeautify --renderer github
+            | xcbeautify --renderer github-actions
 
       - name: Upload result bundles on failure
         if: failure()
