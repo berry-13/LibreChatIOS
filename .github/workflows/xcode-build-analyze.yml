@@ -1,0 +1,68 @@
+name: Xcode Build & Analyze
+
+on:
+  push:
+    branches: [main, initial-codebase]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: xcode-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-analyze:
+    name: LibreChat build & analyze (iOS Simulator)
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Pinned to match local development (Xcode 26.6, build 17F113).
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Print Xcode & SDK versions
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios
+
+      # Static analysis runs as part of the Debug build; analyzer findings are
+      # surfaced inline via xcbeautify's GitHub renderer.
+      - name: Analyze (Debug)
+        run: |
+          set -o pipefail
+          xcodebuild analyze \
+            -project LibreChatIOS.xcodeproj \
+            -scheme LibreChat \
+            -destination 'generic/platform=iOS Simulator' \
+            -resultBundlePath Analyze.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github
+
+      - name: Build (Release)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project LibreChatIOS.xcodeproj \
+            -scheme LibreChat \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -resultBundlePath ReleaseBuild.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github
+
+      - name: Upload result bundles on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-results
+          path: |
+            Analyze.xcresult
+            ReleaseBuild.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
