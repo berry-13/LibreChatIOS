@@ -286,9 +286,9 @@ final class AppModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.phase, .signedIn)
 
         await model.applicationBecameActive()
-        for _ in 0..<1_000 {
+        for _ in 0..<250 {
             if model.generationRecoverySignal != nil { break }
-            await Task.yield()
+            try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertNotNil(model.generationRecoverySignal)
 
@@ -296,9 +296,9 @@ final class AppModelSelectionTests: XCTestCase {
         XCTAssertNil(model.generationRecoverySignal)
 
         await model.applicationBecameActive()
-        for _ in 0..<1_000 {
+        for _ in 0..<250 {
             if model.generationRecoverySignal != nil { break }
-            await Task.yield()
+            try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertNotNil(model.generationRecoverySignal)
 
