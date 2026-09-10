@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, initial-codebase]
   pull_request:
+  schedule:
+    # Nightly full validation (unit + UI tests) at 03:00 UTC; results ready
+    # by morning in CEST. Scheduled runs always execute on the default branch.
+    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       run-ui-tests:
@@ -25,7 +29,8 @@ jobs:
   tests:
     name: Unit tests (iPhone 17 Pro, iOS 26.5)
     runs-on: macos-26
-    timeout-minutes: 90
+    # Generous for nightly runs where unit + UI tests share one job.
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -66,8 +71,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
 
-      - name: Run UI tests (manual runs only)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run-ui-tests }}
+      # UI tests run on manual request and in the nightly schedule. Only
+      # ConversationNavigationUITests is backend-free: LiveServerE2EUITests
+      # and the probe suites hard-require the local LibreChat stack on
+      # localhost:3080 and fail closed without it.
+      - name: Run UI tests (manual and nightly runs)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run-ui-tests) || github.event_name == 'schedule' }}
         run: |
           set -o pipefail
           rm -rf UnitTests.xcresult
@@ -75,7 +84,7 @@ jobs:
             -project LibreChatIOS.xcodeproj \
             -scheme LibreChat \
             -destination "$DESTINATION" \
-            -only-testing:LibreChatUITests \
+            -only-testing:LibreChatUITests/ConversationNavigationUITests \
             -parallel-testing-enabled NO \
             -retry-tests-on-failure \
             -resultBundlePath UnitTests.xcresult \
