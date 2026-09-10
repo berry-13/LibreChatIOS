@@ -57,7 +57,7 @@ jobs:
             -only-testing:LibreChatTests \
             -resultBundlePath UnitTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            | xcbeautify --renderer github
+            | xcbeautify --renderer github-actions
 
       - name: Run UI tests (manual runs only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run-ui-tests }}
@@ -71,7 +71,7 @@ jobs:
             -only-testing:LibreChatUITests \
             -resultBundlePath UnitTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            | xcbeautify --renderer github
+            | xcbeautify --renderer github-actions
 
       - name: Upload test results on failure
         if: failure()
