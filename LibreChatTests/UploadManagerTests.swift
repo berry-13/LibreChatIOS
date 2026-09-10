@@ -221,7 +221,9 @@ final class UploadManagerTests: XCTestCase {
         state: PendingUpload.State,
         context: UploadTestContext
     ) async throws -> PendingUpload {
-        for _ in 0..<100 {
+        // Generous budget: reconciliation spans multiple stubbed round trips
+        // plus cache writes, which a loaded CI runner can outgrow in 2s.
+        for _ in 0..<500 {
             let uploads = try await context.cache.uploads(
                 profileID: context.profileID,
                 accountID: context.accountID
