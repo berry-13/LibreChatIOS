@@ -47,6 +47,11 @@ jobs:
       # Unit tests only by default; LibreChatUITests is excluded from the
       # scheme's test action because it is flaky in CI-like environments
       # (E2E tests additionally require the local backend's E2E_* env).
+      #
+      # Serial + retry: the suite's verified baseline is serial execution;
+      # parallel simulator clones on a shared CI VM flaked a different
+      # timing-sensitive test on every run. Retry rescues rare residual
+      # flakes without hiding deterministic failures.
       - name: Run unit tests
         run: |
           set -o pipefail
@@ -55,6 +60,8 @@ jobs:
             -scheme LibreChat \
             -destination "$DESTINATION" \
             -only-testing:LibreChatTests \
+            -parallel-testing-enabled NO \
+            -retry-tests-on-failure \
             -resultBundlePath UnitTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
@@ -69,6 +76,8 @@ jobs:
             -scheme LibreChat \
             -destination "$DESTINATION" \
             -only-testing:LibreChatUITests \
+            -parallel-testing-enabled NO \
+            -retry-tests-on-failure \
             -resultBundlePath UnitTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             | xcbeautify --renderer github-actions
